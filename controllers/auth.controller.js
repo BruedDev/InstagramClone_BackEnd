@@ -37,7 +37,7 @@ export const login = async (req, res) => {
     // Set cookie options - SameSite phải là 'None' để cookie hoạt động cross-domain
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production' || true, // Luôn true trong môi trường dev để hoạt động với HTTPS
+      secure: true, // Luôn true trong môi trường dev để hoạt động với HTTPS
       sameSite: 'none',  // Điều này quan trọng để cookie hoạt động cross-domain
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       path: '/'
@@ -73,7 +73,7 @@ export const logout = async (req, res) => {
   try {
     res.clearCookie('token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production' || true,
+      secure: true,
       sameSite: 'none',
       path: '/'
     });

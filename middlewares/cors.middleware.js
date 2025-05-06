@@ -6,7 +6,10 @@ const corsMiddleware = () => {
       const allowedOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
-        'https://instagram-clone-seven-sable.vercel.app'
+        'https://instagram-clone-seven-sable.vercel.app',
+        'https://instagram-clone-seven-sable.vercel.app/accounts',
+        'https://instagram-clone-seven-sable.vercel.app/accounts/',
+        'https://instagram-clone-seven-sable.vercel.app/',
       ];
 
       if (!origin || allowedOrigins.includes(origin)) {
