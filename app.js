@@ -1,20 +1,39 @@
 // app.js
-const express = require('express');
+import express from 'express';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+import authRoutes from './routes/auth.routes.js';
+import corsMiddleware from './middlewares/cors.middleware.js';
+import cookieParser from 'cookie-parser';
+
+// Load env variables
+dotenv.config();
+
 const app = express();
 
-// Cấu hình port (mặc định 5000)
-const PORT = process.env.PORT || 5000;
+// Middleware
+app.use(cookieParser());
+app.use(express.json());
+app.use(corsMiddleware());
+app.use(express.urlencoded({ extended: true }));
 
-// Middleware cơ bản (tùy chọn)
-app.use(express.json()); // parse body JSON
-app.use(express.urlencoded({ extended: true })); // parse body form
+// MongoDB connection
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('Kết nối MongoDB thành công'))
+  .catch(err => console.error('Lỗi kết nối MongoDB:', err));
 
-// Route mặc định
+// Routes
+app.use('/api/auth', authRoutes);
+
+// Default route
 app.get('/', (req, res) => {
-  res.send('Hello from Express!');
+  res.send('API Instagram Clone đang hoạt động');
 });
 
-// Khởi động server
+// Start server
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server đang chạy trên cổng ${PORT}`);
 });
+
+export default app;

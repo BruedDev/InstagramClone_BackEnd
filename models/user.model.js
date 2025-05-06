@@ -1,0 +1,84 @@
+import mongoose from 'mongoose';
+import bcrypt from 'bcrypt';
+
+const UserSchema = new mongoose.Schema({
+  username: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+  },
+  fullName: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  email: {
+    type: String,
+    required: function () { return !this.phoneNumber; },
+    unique: true,
+    sparse: true,
+    trim: true,
+    lowercase: true,
+  },
+  phoneNumber: {
+    type: String,
+    required: function () { return !this.email; },
+    unique: true,
+    sparse: true,
+    trim: true,
+  },
+  password: {
+    type: String,
+    required: true,
+    minlength: 6,
+  },
+  profilePicture: {
+    type: String,
+    default: 'https://thumbs.dreamstime.com/b/default-avatar-profile-icon-vector-social-media-user-portrait-176256935.jpg',
+  },
+  bio: {
+    type: String,
+    default: '',
+  },
+  followers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+  following: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+  isPrivate: {
+    type: Boolean,
+    default: false,
+  },
+  facebookId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  authType: {
+    type: String,
+    enum: ['local', 'facebook'],
+    default: 'local'
+  }
+}, { timestamps: true });
+
+UserSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+UserSchema.methods.comparePassword = async function (candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+export default mongoose.model('user', UserSchema, 'users');
