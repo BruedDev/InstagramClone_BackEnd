@@ -2,22 +2,7 @@ import cors from 'cors';
 
 const corsMiddleware = () => {
   const corsOptions = {
-    origin: function (origin, callback) {
-      const allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'https://instagram-clone-seven-sable.vercel.app',
-        'https://instagram-clone-seven-sable.vercel.app/accounts',
-        'https://instagram-clone-seven-sable.vercel.app/accounts/',
-        'https://instagram-clone-seven-sable.vercel.app/',
-      ];
-
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
+    origin: true, // Cho phép tất cả origins
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
