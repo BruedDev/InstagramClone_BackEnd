@@ -6,6 +6,14 @@ export const verifyToken = async (req, res, next) => {
     const token = req.cookies.token ||
       (req.headers.authorization && req.headers.authorization.split(' ')[1]);
 
+    // Nếu không có trong cookie, kiểm tra trong header
+    if (!token && req.headers.authorization) {
+      const authHeader = req.headers.authorization;
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
+    }
+
     if (!token) {
       return res.status(401).json({
         success: false,

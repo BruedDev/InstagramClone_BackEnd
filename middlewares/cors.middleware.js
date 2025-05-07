@@ -9,6 +9,7 @@ const corsMiddleware = () => {
         'http://localhost:3000',
         'http://localhost:3001',
         'https://instagram-clone-seven-sable.vercel.app',
+        // Thêm các origin khác nếu cần
       ];
 
       if (!origin || allowedOrigins.includes(origin)) {
@@ -27,6 +28,12 @@ const corsMiddleware = () => {
 };
 
 const applyMiddlewares = (app) => {
+  // Thêm header cho phép credentials
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Credentials', 'true');
+    next();
+  });
+
   app.use(cookieParser());
   app.use(express.json());
   app.use(corsMiddleware());
