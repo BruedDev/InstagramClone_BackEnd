@@ -21,8 +21,6 @@ const corsMiddleware = () => {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     exposedHeaders: ['Set-Cookie', 'Authorization'],
-    preflightContinue: false,
-    optionsSuccessStatus: 204
   };
 
   return cors(corsOptions);
