@@ -37,10 +37,12 @@ export const login = async (req, res) => {
     // Set cookie options - SameSite phải là 'None' để cookie hoạt động cross-domain
     const cookieOptions = {
       httpOnly: true,
-      secure: true, // Luôn true trong môi trường dev để hoạt động với HTTPS
-      sameSite: 'none',  // Điều này quan trọng để cookie hoạt động cross-domain
+      secure: true,
+      sameSite: 'none',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      path: '/'
+      path: '/',
+      // Thêm domain nếu cần
+      // domain: '.yourfrontenddomain.com'
     };
 
     // Set cookie
