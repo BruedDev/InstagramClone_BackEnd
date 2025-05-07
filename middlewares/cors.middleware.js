@@ -1,3 +1,5 @@
+import express from 'express';
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
 
 const corsMiddleware = () => {
@@ -24,4 +26,11 @@ const corsMiddleware = () => {
   return cors(corsOptions);
 };
 
-export default corsMiddleware;
+const applyMiddlewares = (app) => {
+  app.use(cookieParser());
+  app.use(express.json());
+  app.use(corsMiddleware());
+  app.use(express.urlencoded({ extended: true }));
+};
+
+export default applyMiddlewares;
