@@ -12,10 +12,12 @@ const corsMiddleware = () => {
         // Thêm các origin khác nếu cần
       ];
 
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Cho phép mọi origin trong quá trình phát triển
+      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        console.log('Blocked origin:', origin);
+        callback(null, false);
       }
     },
     credentials: true,
@@ -28,16 +30,18 @@ const corsMiddleware = () => {
 };
 
 const applyMiddlewares = (app) => {
-  // Thêm header cho phép credentials
+  // Đặt CORS middleware trước
+  app.use(corsMiddleware());
+
+  // Sau đó các middleware khác
+  app.use(cookieParser());
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // Đảm bảo header này luôn được đặt sau CORS
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Credentials', 'true');
     next();
   });
-
-  app.use(cookieParser());
-  app.use(express.json());
-  app.use(corsMiddleware());
-  app.use(express.urlencoded({ extended: true }));
 };
-
 export default applyMiddlewares;

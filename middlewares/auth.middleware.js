@@ -3,10 +3,9 @@ import User from '../models/user.model.js';
 
 export const verifyToken = async (req, res, next) => {
   try {
-    const token = req.cookies.token ||
+    let token = req.cookies.token ||
       (req.headers.authorization && req.headers.authorization.split(' ')[1]);
 
-    // Nếu không có trong cookie, kiểm tra trong header
     if (!token && req.headers.authorization) {
       const authHeader = req.headers.authorization;
       if (authHeader.startsWith('Bearer ')) {
