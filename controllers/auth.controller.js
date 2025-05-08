@@ -134,7 +134,6 @@ export const register = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Đăng ký thành công',
-      token,
       user: {
         id: newUser._id,
         username: newUser.username,
