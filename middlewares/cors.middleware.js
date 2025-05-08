@@ -19,14 +19,20 @@ const corsMiddleware = () => {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    exposedHeaders: ['Set-Cookie']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Set-Cookie', 'Authorization'],
   };
 
   return cors(corsOptions);
 };
 
 const applyMiddlewares = (app) => {
+  // Thêm header cho phép credentials
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Credentials', 'true');
+    next();
+  });
+
   app.use(cookieParser());
   app.use(express.json());
   app.use(corsMiddleware());
