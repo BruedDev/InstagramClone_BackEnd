@@ -12,7 +12,7 @@ const corsMiddleware = () => {
       ];
 
       if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
+        callback(null, origin); // <- Trả lại đúng origin!
       } else {
         callback(new Error('Not allowed by CORS'));
       }
