@@ -56,7 +56,15 @@ export const login = async (req, res) => {
         username: user.username,
         fullName: user.fullName,
         email: user.email,
-        profilePicture: user.profilePicture
+        phoneNumber: user.phoneNumber,
+        profilePicture: user.profilePicture,
+        bio: user.bio,
+        followers: user.followers,
+        following: user.following,
+        isPrivate: user.isPrivate,
+        authType: user.authType,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
       }
     });
 
@@ -71,30 +79,55 @@ export const login = async (req, res) => {
 
 export const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { username, fullName, email, phoneNumber, password } = req.body;
 
     // Validate required fields
-    if (!name || !email || !password) {
+    if (!username || !fullName || !password || (!email && !phoneNumber)) {
       return res.status(400).json({
         success: false,
         message: 'Vui lòng điền đầy đủ thông tin bắt buộc'
       });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    // Check if user already exists with username
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
       return res.status(400).json({
         success: false,
-        message: 'Email này đã được sử dụng'
+        message: 'Tên người dùng này đã được sử dụng'
       });
+    }
+
+    // Check if user already exists with email (if provided)
+    if (email) {
+      const existingEmail = await User.findOne({ email });
+      if (existingEmail) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email này đã được sử dụng'
+        });
+      }
+    }
+
+    // Check if user already exists with phone number (if provided)
+    if (phoneNumber) {
+      const existingPhone = await User.findOne({ phoneNumber });
+      if (existingPhone) {
+        return res.status(400).json({
+          success: false,
+          message: 'Số điện thoại này đã được sử dụng'
+        });
+      }
     }
 
     // Create new user
     const newUser = new User({
-      name,
+      username,
+      fullName,
       email,
-      password
+      phoneNumber,
+      password,
+      authType: 'local'
     });
 
     // Save user to database
@@ -126,10 +159,18 @@ export const register = async (req, res) => {
       token,
       user: {
         id: newUser._id,
-        name: newUser.name,
+        username: newUser.username,
+        fullName: newUser.fullName,
         email: newUser.email,
-        avatar: newUser.avatar,
-        role: newUser.role
+        phoneNumber: newUser.phoneNumber,
+        profilePicture: newUser.profilePicture,
+        bio: newUser.bio,
+        followers: newUser.followers,
+        following: newUser.following,
+        isPrivate: newUser.isPrivate,
+        authType: newUser.authType,
+        createdAt: newUser.createdAt,
+        updatedAt: newUser.updatedAt
       }
     });
   } catch (error) {
