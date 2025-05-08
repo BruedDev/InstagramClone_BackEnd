@@ -38,7 +38,7 @@ export const login = async (req, res) => {
     const cookieOptions = {
       httpOnly: true,
       secure: true, // Luôn true trong môi trường dev để hoạt động với HTTPS
-      sameSite: 'none',  // Điều này quan trọng để cookie hoạt động cross-domain
+      sameSite: 'None',  // Điều này quan trọng để cookie hoạt động cross-domain
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       path: '/'
     };
@@ -74,7 +74,7 @@ export const logout = async (req, res) => {
     res.clearCookie('token', {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: 'None',
       path: '/'
     });
 
