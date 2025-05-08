@@ -1,139 +1,62 @@
-// auth.middleware.js
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
 
 export const verifyToken = async (req, res, next) => {
   try {
-    // Kiểm tra token từ nhiều nguồn (ưu tiên theo thứ tự)
+    // Lấy token từ nhiều nguồn khác nhau để đảm bảo hoạt động trên mọi nền tảng
     let token;
 
-    // 1. Kiểm tra từ cookie (phương thức ưu tiên)
+    // 1. Lấy từ cookies (thường hoạt động trên Windows)
     if (req.cookies && req.cookies.token) {
       token = req.cookies.token;
     }
 
-    // 2. Kiểm tra từ Authorization header
-    else if (req.headers.authorization) {
-      const authHeader = req.headers.authorization;
-      // Đảm bảo format Bearer token
-      if (authHeader.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      } else {
-        token = authHeader; // Trường hợp gửi token trực tiếp không có prefix
-      }
+    // 2. Lấy từ Authorization header (Bearer token)
+    else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
     }
 
-    // 3. Kiểm tra từ query params (ít dùng, chỉ cho một số API đặc biệt)
+    // 3. Lấy từ Authorization header nếu không có prefix "Bearer"
+    else if (req.headers.authorization) {
+      token = req.headers.authorization;
+    }
+
+    // 4. Kiểm tra trong query parameters (cho mobile apps)
     else if (req.query && req.query.token) {
       token = req.query.token;
     }
 
-    // Nếu không tìm thấy token
+    // 5. Kiểm tra trong body (một số client gửi token trong body)
+    else if (req.body && req.body.token) {
+      token = req.body.token;
+    }
+
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'Quyền truy cập bị từ chối. Không tìm thấy token xác thực.'
+        message: 'Access denied. No token provided.'
       });
     }
 
-    // Xác thực JWT token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (jwtError) {
-      // Xử lý các lỗi JWT cụ thể
-      if (jwtError.name === 'TokenExpiredError') {
-        res.clearCookie('token', {
-          httpOnly: true,
-          secure: true, // Luôn true để hoạt động với HTTPS
-          sameSite: 'none',  // Cho phép cookie hoạt động cross-domain
-          path: '/'
-        });
-        return res.status(401).json({
-          success: false,
-          message: 'Token đã hết hạn. Vui lòng đăng nhập lại.'
-        });
-      } else if (jwtError.name === 'JsonWebTokenError') {
-        res.clearCookie('token', {
-          httpOnly: true,
-          secure: true,
-          sameSite: 'none',
-          path: '/'
-        });
-        return res.status(401).json({
-          success: false,
-          message: 'Token không hợp lệ.'
-        });
-      }
-      throw jwtError;
-    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Kiểm tra user trong database
+    // Verify user still exists in database
     const user = await User.findById(decoded.id).select('-password');
-
-    // Nếu không tìm thấy user
     if (!user) {
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'none',
-        path: '/'
-      });
       return res.status(401).json({
         success: false,
-        message: 'Người dùng không tồn tại hoặc đã bị xóa.'
+        message: 'User not found'
       });
     }
 
-    // Kiểm tra nếu tài khoản bị vô hiệu hóa (tùy vào model của bạn)
-    if (user.isDisabled === true) {
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'none',
-        path: '/'
-      });
-      return res.status(403).json({
-        success: false,
-        message: 'Tài khoản đã bị vô hiệu hóa.'
-      });
-    }
-
-    // Gán thông tin user vào request để các middleware và controller tiếp theo sử dụng
     req.user = user;
-
-    // Tùy chọn: Ghi log hoặc cập nhật lastActive của user
-    // await User.findByIdAndUpdate(user._id, { lastActive: new Date() });
-
-    // Chuyển đến middleware hoặc controller tiếp theo
     next();
-
   } catch (error) {
-    console.error('Lỗi xác thực:', error);
-
-    // Xóa cookie token nếu có lỗi
-    res.clearCookie('token', {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      path: '/'
-    });
-
-    return res.status(500).json({
+    console.log('Authentication error:', error.message);
+    res.clearCookie('token');
+    return res.status(401).json({
       success: false,
-      message: 'Lỗi xác thực. Vui lòng thử lại sau.'
-    });
-  }
-};
-
-// Middleware kiểm tra role admin
-export const isAdmin = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
-    next();
-  } else {
-    return res.status(403).json({
-      success: false,
-      message: 'Bạn không có quyền truy cập vào tài nguyên này.'
+      message: 'Invalid token'
     });
   }
 };
