@@ -130,28 +130,6 @@ export const register = async (req, res) => {
       authType: 'local'
     });
 
-    // Save user to database
-    await newUser.save();
-
-    // Create JWT token
-    const token = jwt.sign(
-      { id: newUser._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    // Cookie options
-    const cookieOptions = {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'None',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-      path: '/'
-    };
-
-    // Set cookie
-    res.cookie('token', token, cookieOptions);
-
     // Return response
     res.status(201).json({
       success: true,
