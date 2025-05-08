@@ -1,105 +1,158 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
+import bcrypt from 'bcrypt';
 
+// Thiết lập thông số cho cookie
+const setupCookieOptions = (req) => {
+  // Xác định môi trường - mặc định giả định là production nếu không được thiết lập
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  const isProduction = nodeEnv === 'production';
+
+  // Xác định nếu kết nối là HTTPS
+  const isSecureConnection = req.secure || req.headers['x-forwarded-proto'] === 'https';
+
+  return {
+    httpOnly: true,
+    // Chỉ dùng secure=true nếu đang trong production HOẶC kết nối hiện tại là HTTPS
+    secure: isProduction || isSecureConnection,
+    // Sử dụng sameSite=none chỉ khi có kết nối secure
+    sameSite: (isProduction || isSecureConnection) ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // Token có hiệu lực 7 ngày
+    path: '/',
+  };
+};
+
+/**
+ * Đăng nhập người dùng
+ * @param {Object} req - Request
+ * @param {Object} res - Response
+ */
 export const login = async (req, res) => {
   try {
-    const { identifier, password } = req.body;
+    const { email, password } = req.body;
 
-    if (!identifier || !password) {
+    // Kiểm tra dữ liệu đầu vào
+    if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields'
+        message: 'Vui lòng nhập email và mật khẩu',
       });
     }
 
-    const user = await User.findOne({
-      $or: [
-        { username: identifier },
-        { email: identifier },
-        { phoneNumber: identifier }
-      ]
-    });
-
-    if (!user || !(await user.comparePassword(password))) {
+    // Tìm người dùng theo email
+    const user = await User.findOne({ email });
+    if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Email hoặc mật khẩu không chính xác',
       });
     }
 
-    // Create token
+    // Kiểm tra mật khẩu
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Email hoặc mật khẩu không chính xác',
+      });
+    }
+
+    // Tạo JWT token
     const token = jwt.sign(
-      { id: user._id },
+      {
+        userId: user._id,
+        email: user.email,
+        role: user.role || 'user',
+      },
       process.env.JWT_SECRET,
-      { expiresIn: '30d' }
+      { expiresIn: '7d' }
     );
 
-    const cookieOptions = {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'None',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-      path: '/'
+    // Thiết lập cookie options
+    const cookieOptions = setupCookieOptions(req);
+
+    // Gửi token qua cookie
+    res.cookie('token', token, cookieOptions);
+
+    // Gửi token qua header cho các trường hợp không sử dụng được cookie
+    res.setHeader('Authorization', `Bearer ${token}`);
+
+    // Trả về thông tin người dùng (không bao gồm mật khẩu)
+    const userResponse = {
+      _id: user._id,
+      email: user.email,
+      name: user.name,
+      role: user.role || 'user',
     };
 
-    // Set cookie
-    res.cookie('token', token, cookieOptions);
-    res.header('Access-Control-Allow-Credentials', 'true');
-    // Trả về token trong JSON response để frontend có thể sử dụng nếu cookie không hoạt động
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: 'Login successful',
-      token: token, // Thêm token vào response
-      user: {
-        id: user._id,
-        username: user.username,
-        fullName: user.fullName,
-        email: user.email,
-        profilePicture: user.profilePicture
-      }
+      message: 'Đăng nhập thành công',
+      user: userResponse,
+      token, // Cung cấp token trong response body cho mobile apps
     });
-
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
+    console.error('Lỗi đăng nhập:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Đã xảy ra lỗi khi đăng nhập',
+      error: error.message,
     });
   }
 };
 
-export const logout = async (req, res) => {
+/**
+ * Đăng xuất người dùng
+ * @param {Object} req - Request
+ * @param {Object} res - Response
+ */
+export const logout = (req, res) => {
   try {
-    res.clearCookie('token', {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'None',
-      path: '/'
+    // Thiết lập cookie options
+    const cookieOptions = setupCookieOptions(req);
+
+    // Xóa cookie token
+    res.cookie('token', '', {
+      ...cookieOptions,
+      maxAge: 1, // Hết hạn ngay lập tức
     });
 
-    res.status(200).json({
+    // Xóa Authorization header
+    res.setHeader('Authorization', '');
+
+    return res.status(200).json({
       success: true,
-      message: 'Logged out successfully'
+      message: 'Đăng xuất thành công',
     });
   } catch (error) {
-    res.status(500).json({
+    console.error('Lỗi đăng xuất:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Đã xảy ra lỗi khi đăng xuất',
+      error: error.message,
     });
   }
 };
 
-export const checkAuth = async (req, res) => {
+/**
+ * Kiểm tra trạng thái xác thực
+ * @param {Object} req - Request
+ * @param {Object} res - Response
+ */
+export const checkAuth = (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
-    res.status(200).json({
+    // Trả về thông tin người dùng (đã được xác thực từ middleware verifyToken)
+    return res.status(200).json({
       success: true,
-      user
+      message: 'Người dùng đã được xác thực',
+      user: req.user,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error('Lỗi kiểm tra xác thực:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Đã xảy ra lỗi khi kiểm tra xác thực',
+      error: error.message,
     });
   }
 };
