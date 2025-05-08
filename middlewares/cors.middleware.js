@@ -8,11 +8,13 @@ const corsMiddleware = () => {
       const allowedOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
+        'https://instagram-clone-seven-sable.vercel.app',
         process.env.FRONTEND_URL,
-      ];
+      ].filter(Boolean); // Lọc bỏ giá trị null/undefined
 
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, origin); // <- Trả lại đúng origin!
+      // Cho phép các request từ không có origin (như mobile apps)
+      if (!origin || allowedOrigins.some(allowed => origin.includes(allowed))) {
+        callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
       }
@@ -20,23 +22,26 @@ const corsMiddleware = () => {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['Set-Cookie', 'Authorization'],
   };
 
   return cors(corsOptions);
 };
 
 const applyMiddlewares = (app) => {
-  // Thêm header cho phép credentials
+  app.use(cookieParser());
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+  app.use(corsMiddleware());
+
+  // Thêm các header cần thiết sau CORS
   app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && origin.includes(process.env.FRONTEND_URL)) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
     res.header('Access-Control-Allow-Credentials', 'true');
     next();
   });
-
-  app.use(cookieParser());
-  app.use(express.json());
-  app.use(corsMiddleware());
-  app.use(express.urlencoded({ extended: true }));
 };
 
 export default applyMiddlewares;

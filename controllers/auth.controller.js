@@ -36,10 +36,11 @@ export const login = async (req, res) => {
 
     const cookieOptions = {
       httpOnly: true,
-      secure: true,
-      sameSite: 'None',
+      secure: process.env.NODE_ENV === 'production', // Chỉ true khi production
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
       maxAge: 30 * 24 * 60 * 60 * 1000,
-      path: '/'
+      path: '/',
+      domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined
     };
 
     // Set cookie
@@ -70,12 +71,15 @@ export const login = async (req, res) => {
 
 export const logout = async (req, res) => {
   try {
-    res.clearCookie('token', {
+    const cookieOptions = {
       httpOnly: true,
-      secure: true,
-      sameSite: 'None',
-      path: '/'
-    });
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+      path: '/',
+      domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined
+    };
+
+    res.clearCookie('token', cookieOptions);
 
     res.status(200).json({
       success: true,
