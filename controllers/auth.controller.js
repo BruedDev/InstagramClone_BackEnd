@@ -36,6 +36,7 @@ export const login = async (req, res) => {
 
     // Set cookie options - SameSite phải là 'None' để cookie hoạt động cross-domain
     const cookieOptions = {
+      domain: new URL(process.env.FRONTEND_URL).hostname,
       httpOnly: true,
       secure: true, // Luôn true trong môi trường dev để hoạt động với HTTPS
       sameSite: 'None',  // Điều này quan trọng để cookie hoạt động cross-domain
@@ -72,6 +73,7 @@ export const login = async (req, res) => {
 export const logout = async (req, res) => {
   try {
     res.clearCookie('token', {
+      domain: new URL(process.env.FRONTEND_URL).hostname,
       httpOnly: true,
       secure: true,
       sameSite: 'None',
