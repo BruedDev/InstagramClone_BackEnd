@@ -36,11 +36,10 @@ export const login = async (req, res) => {
 
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Chỉ true khi production
-      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+      secure: true,
+      sameSite: 'None',
       maxAge: 30 * 24 * 60 * 60 * 1000,
-      path: '/',
-      domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined
+      path: '/'
     };
 
     // Set cookie
