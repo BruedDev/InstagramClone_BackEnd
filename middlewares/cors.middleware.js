@@ -11,7 +11,7 @@ const corsMiddleware = () => {
         'https://instagram-clone-seven-sable.vercel.app',
       ];
       if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true); // ✅ Dùng true để tự động set Access-Control-Allow-Origin đúng
+        callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
       }
@@ -26,7 +26,7 @@ const corsMiddleware = () => {
 };
 
 const applyMiddlewares = (app) => {
-  app.use(corsMiddleware()); // ✅ Đặt lên đầu
+  app.use(corsMiddleware());
   app.use(cookieParser());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
