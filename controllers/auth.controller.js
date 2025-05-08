@@ -34,24 +34,23 @@ export const login = async (req, res) => {
       { expiresIn: '30d' }
     );
 
-    // Cấu hình cookie cho Safari (iOS/MacOS)
+    // Set cookie options - SameSite phải là 'None' để cookie hoạt động cross-domain
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: true, // Luôn true trong môi trường dev để hoạt động với HTTPS
+      sameSite: 'none',  // Điều này quan trọng để cookie hoạt động cross-domain
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       path: '/'
     };
 
-    // Đặt cookie
+    // Set cookie
     res.cookie('token', token, cookieOptions);
 
-    // Đặt Authorization header trong response
-    res.setHeader('Authorization', `Bearer ${token}`);
-
+    // Trả về token trong JSON response để frontend có thể sử dụng nếu cookie không hoạt động
     res.status(200).json({
       success: true,
       message: 'Login successful',
+      token: token, // Thêm token vào response
       user: {
         id: user._id,
         username: user.username,

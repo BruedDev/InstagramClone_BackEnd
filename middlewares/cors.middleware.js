@@ -9,39 +9,28 @@ const corsMiddleware = () => {
         'http://localhost:3000',
         'http://localhost:3001',
         'https://instagram-clone-seven-sable.vercel.app',
-        // Thêm các origin khác nếu cần
       ];
 
-      // Cho phép mọi origin trong quá trình phát triển
-      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.log('Blocked origin:', origin);
-        callback(null, false);
+        callback(new Error('Not allowed by CORS'));
       }
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['Set-Cookie', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Set-Cookie']
   };
 
   return cors(corsOptions);
 };
 
 const applyMiddlewares = (app) => {
-  // Đặt CORS middleware trước
-  app.use(corsMiddleware());
-
-  // Sau đó các middleware khác
   app.use(cookieParser());
   app.use(express.json());
+  app.use(corsMiddleware());
   app.use(express.urlencoded({ extended: true }));
-
-  // Đảm bảo header này luôn được đặt sau CORS
-  app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Credentials', 'true');
-    next();
-  });
 };
+
 export default applyMiddlewares;

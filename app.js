@@ -1,23 +1,20 @@
 import express from 'express';
-import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import authRoutes from './routes/auth.routes.js';
 import applyMiddlewares from './middlewares/cors.middleware.js';
+import connectDB from './config/db.config.js';
+import routes from './routes/index.routes.js';
 
 dotenv.config();
 
 const app = express();
 
+// Kết nối MongoDB trước khi tiếp tục
+connectDB();
+
 // Áp dụng middleware
 applyMiddlewares(app);
 
-// Kết nối MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Kết nối MongoDB thành công'))
-  .catch(err => console.error('Lỗi kết nối MongoDB:', err));
-
-// Routes
-app.use('/api/auth', authRoutes);
+app.use(routes);
 
 app.get('/', (req, res) => {
   res.send('API Instagram Clone đang hoạt động');
