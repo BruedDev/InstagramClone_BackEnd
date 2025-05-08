@@ -29,22 +29,32 @@ const setupCookieOptions = (req) => {
  */
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identifier, password } = req.body;
 
     // Kiểm tra dữ liệu đầu vào
-    if (!email || !password) {
+    if (!identifier || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Vui lòng nhập email và mật khẩu',
+        message: 'Vui lòng nhập thông tin đăng nhập và mật khẩu',
       });
     }
 
-    // Tìm người dùng theo email
-    const user = await User.findOne({ email });
+    // Tạo điều kiện tìm kiếm linh hoạt (email, username hoặc phone)
+    const searchQuery = {
+      $or: [
+        { email: identifier },
+        { username: identifier },
+        { phone: identifier }
+      ]
+    };
+
+    // Tìm người dùng theo nhiều trường
+    const user = await User.findOne(searchQuery);
+
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Email hoặc mật khẩu không chính xác',
+        message: 'Thông tin đăng nhập hoặc mật khẩu không chính xác',
       });
     }
 
@@ -53,7 +63,7 @@ export const login = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
-        message: 'Email hoặc mật khẩu không chính xác',
+        message: 'Thông tin đăng nhập hoặc mật khẩu không chính xác',
       });
     }
 
@@ -62,6 +72,7 @@ export const login = async (req, res) => {
       {
         userId: user._id,
         email: user.email,
+        username: user.username,
         role: user.role || 'user',
       },
       process.env.JWT_SECRET,
@@ -81,7 +92,9 @@ export const login = async (req, res) => {
     const userResponse = {
       _id: user._id,
       email: user.email,
+      username: user.username,
       name: user.name,
+      phone: user.phone,
       role: user.role || 'user',
     };
 

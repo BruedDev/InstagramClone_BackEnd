@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import User from '../models/user.model.js';
 
 /**
  * Xác thực token JWT từ request
@@ -35,6 +36,7 @@ export const verifyToken = (req, res, next) => {
     req.user = {
       userId: decoded.userId,
       email: decoded.email,
+      username: decoded.username,
       role: decoded.role
     };
 
@@ -98,5 +100,27 @@ export const verifyAdmin = (req, res, next) => {
       message: 'Đã xảy ra lỗi khi kiểm tra quyền',
       error: error.message
     });
+  }
+};
+
+/**
+ * Cập nhật thời gian đăng nhập cuối
+ * @param {Object} req - Request
+ * @param {Object} res - Response
+ * @param {Function} next - Next middleware
+ */
+export const updateLastLogin = async (req, res, next) => {
+  try {
+    if (req.user && req.user.userId) {
+      // Cập nhật lastLogin mà không cần chờ đợi
+      User.findByIdAndUpdate(req.user.userId, { lastLogin: new Date() })
+        .exec()
+        .catch(err => console.error('Lỗi cập nhật lastLogin:', err));
+    }
+    next();
+  } catch (error) {
+    // Không trả về lỗi, chỉ ghi log
+    console.error('Lỗi cập nhật lastLogin:', error);
+    next();
   }
 };
