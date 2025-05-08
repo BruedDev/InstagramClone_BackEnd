@@ -45,7 +45,7 @@ export const login = async (req, res) => {
 
     // Set cookie
     res.cookie('token', token, cookieOptions);
-
+    res.header('Access-Control-Allow-Credentials', 'true');
     // Trả về token trong JSON response để frontend có thể sử dụng nếu cookie không hoạt động
     res.status(200).json({
       success: true,
