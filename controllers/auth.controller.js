@@ -71,15 +71,12 @@ export const login = async (req, res) => {
 
 export const logout = async (req, res) => {
   try {
-    const cookieOptions = {
+    res.clearCookie('token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
-      path: '/',
-      domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined
-    };
-
-    res.clearCookie('token', cookieOptions);
+      secure: true,
+      sameSite: 'None',
+      path: '/'
+    });
 
     res.status(200).json({
       success: true,

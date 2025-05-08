@@ -9,7 +9,6 @@ const corsMiddleware = () => {
         'http://localhost:3000',
         'http://localhost:3001',
         'https://instagram-clone-seven-sable.vercel.app',
-        process.env.FRONTEND_URL,
       ].filter(Boolean); // Lọc bỏ giá trị null/undefined
 
       // Cho phép các request từ không có origin (như mobile apps)
