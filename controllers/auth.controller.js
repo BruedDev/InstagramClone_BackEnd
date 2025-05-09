@@ -200,7 +200,10 @@ export const facebookLogin = async (req, res) => {
     const { accessToken, userID, name, email } = req.body;
 
     if (!accessToken || !userID) {
-      return res.status(400).json({ message: 'Missing required Facebook authentication data' });
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required Facebook authentication data'
+      });
     }
 
     // Kiểm tra xem có người dùng với Facebook ID này chưa
@@ -251,14 +254,14 @@ export const facebookLogin = async (req, res) => {
       }
     }
 
-    // Tạo JWT token
+    // Tạo JWT token - Sửa để đồng nhất với login
     const token = jwt.sign(
-      { userId: user._id },  // Sửa lại để đồng nhất với login/register
+      { id: user._id },  // Thay đổi từ userId thành id để khớp với login
       process.env.JWT_SECRET,
-      { expiresIn: '30d' }  // Giống như trong login (thời gian hết hạn 30 ngày)
+      { expiresIn: '30d' }
     );
 
-    // Thiết lập cookie giống như ở login và register
+    // Thiết lập cookie
     const cookieOptions = {
       httpOnly: true,
       secure: true,
@@ -269,17 +272,33 @@ export const facebookLogin = async (req, res) => {
 
     res.cookie('token', token, cookieOptions);
 
-    // Trả về thông tin người dùng (không gồm mật khẩu) và token
-    const { password, ...userInfo } = user._doc;
-
+    // Trả về thông tin người dùng theo định dạng giống login
     res.status(200).json({
-      message: 'Đăng nhập bằng Facebook thành công',
       success: true,
-      token, // Trả về token làm fallback cho trường hợp cookie không hoạt động
-      user: userInfo,
+      message: 'Đăng nhập bằng Facebook thành công',
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        fullName: user.fullName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        profilePicture: user.profilePicture,
+        bio: user.bio,
+        followers: user.followers,
+        following: user.following,
+        isPrivate: user.isPrivate,
+        authType: user.authType,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      }
     });
   } catch (error) {
     console.error('Facebook authentication error:', error);
-    res.status(500).json({ message: 'Authentication failed', error: error.message, success: false });
+    res.status(500).json({
+      success: false,
+      message: 'Authentication failed',
+      error: error.message
+    });
   }
 };
