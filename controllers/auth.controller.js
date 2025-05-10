@@ -225,12 +225,12 @@ export const facebookCallback = (req, res) => {
 
     // Chuyển hướng về frontend với token
     // Frontend cần xử lý route này để lấy token và lưu trữ
-    const redirectUrl = `${process.env.FRONTEND_URL || 'https://instagram-clone-seven-sable.vercel.app/'}/accounts/login/?token=${token}`;
+    const redirectUrl = `https://instagram-clone-seven-sable.vercel.app/accounts/login/?token=${token}`;
     return res.redirect(redirectUrl);
   } catch (error) {
     console.error('Facebook callback error:', error);
     // Chuyển hướng về trang đăng nhập với thông báo lỗi
-    return res.redirect(`${process.env.FRONTEND_URL || 'https://instagram-clone-seven-sable.vercel.app/'}/accounts/login?error=auth_failed`);
+    return res.redirect(`https://instagram-clone-seven-sable.vercel.app/accounts/login?error=auth_failed`);
   }
 };
 
