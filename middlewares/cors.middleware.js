@@ -9,6 +9,7 @@ const corsMiddleware = () => {
         'http://localhost:3000',
         'http://localhost:3001',
         'https://instagram-clone-seven-sable.vercel.app',
+        'https://instagramclone-backend-2jp7.onrender.com'
       ];
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
