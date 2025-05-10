@@ -199,6 +199,41 @@ export const checkAuth = async (req, res) => {
   }
 };
 
+export const facebookCallback = (req, res) => {
+  try {
+    // Lấy thông tin user từ req.user (đã được Passport xác thực)
+    const user = req.user;
+
+    // Tạo JWT token
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    // Cài đặt cookie bảo mật
+    const cookieOptions = {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/'
+    };
+
+    // Set cookie cho trình duyệt
+    res.cookie('token', token, cookieOptions);
+
+    // Chuyển hướng về frontend với token
+    // Frontend cần xử lý route này để lấy token và lưu trữ
+    const redirectUrl = `${process.env.FRONTEND_URL}/accounts/login/?token=${token}`;
+    return res.redirect(redirectUrl);
+  } catch (error) {
+    console.error('Facebook callback error:', error);
+    // Chuyển hướng về trang đăng nhập với thông báo lỗi
+    return res.redirect(`${process.env.FRONTEND_URL}/accounts/login?error=auth_failed`);
+  }
+};
+
 export const facebookLogin = async (req, res) => {
   try {
     const { accessToken, userID, name, email } = req.body;

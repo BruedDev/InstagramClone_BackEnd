@@ -58,11 +58,16 @@ const UserSchema = new mongoose.Schema({
     unique: true,
     sparse: true
   },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
   authType: {
     type: String,
-    enum: ['local', 'facebook'],
+    enum: ['local', 'facebook', 'google'],
     default: 'local'
-  }
+  },
 }, { timestamps: true });
 
 UserSchema.pre('save', async function (next) {

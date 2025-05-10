@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
+import passport from 'passport';
 
 export const verifyToken = async (req, res, next) => {
   try {
@@ -39,4 +40,30 @@ export const verifyToken = async (req, res, next) => {
       message: 'Invalid token'
     });
   }
+};
+
+export const authenticateJWT = passport.authenticate('jwt', { session: false });
+
+// Check if user is authenticated using Passport
+export const isAuthenticated = (req, res, next) => {
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.status(401).json({ message: 'Unauthorized: Please login first' });
+};
+
+// Check if user is NOT authenticated (for login/register pages)
+export const isNotAuthenticated = (req, res, next) => {
+  if (!req.isAuthenticated()) {
+    return next();
+  }
+  res.status(403).json({ message: 'Already logged in' });
+};
+
+// Optional: Add role-based authentication if needed
+export const isAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') {
+    return next();
+  }
+  res.status(403).json({ message: 'Forbidden: Admin access required' });
 };
