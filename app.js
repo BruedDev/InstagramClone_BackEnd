@@ -24,7 +24,7 @@ app.use(
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({
-      mongoUrl: process.env.MONGO_URI, // MongoDB URI từ .env
+      mongoUrl: process.env.MONGODB_URI, // MongoDB URI từ .env
       collectionName: 'sessions',     // Tên collection lưu session
     }),
     cookie: {
