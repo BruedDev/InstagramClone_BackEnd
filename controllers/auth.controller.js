@@ -8,7 +8,7 @@ export const login = async (req, res) => {
     if (!identifier || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields'
+        message: 'Vui lòng cung cấp đầy đủ thông tin'
       });
     }
 
@@ -23,7 +23,7 @@ export const login = async (req, res) => {
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Tài khoản hoặc mật khẩu không chính xác'
       });
     }
 
@@ -49,7 +49,7 @@ export const login = async (req, res) => {
     // Trả về dữ liệu user và token để dùng cho fallback nếu cookie không hoạt động
     res.status(200).json({
       success: true,
-      message: 'Login successful',
+      message: 'Đăng nhập thành công',
       token,
       user: {
         id: user._id,
@@ -69,10 +69,10 @@ export const login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Lỗi đăng nhập:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Lỗi server'
     });
   }
 };
@@ -126,9 +126,12 @@ export const register = async (req, res) => {
       fullName,
       email,
       phoneNumber,
-      password,
+      password, // Lưu ý: Password sẽ được hash trong schema thông qua pre-save middleware
       authType: 'local'
     });
+
+    // Lưu user vào database
+    await newUser.save();
 
     // Return response
     res.status(201).json({
@@ -206,16 +209,24 @@ export const facebookLogin = async (req, res) => {
       });
     }
 
-    // Kiểm tra xem có người dùng với Facebook ID này chưa
+    // ✅ BƯỚC MỚI: Xác minh token với Facebook
+    const fbRes = await fetch(`https://graph.facebook.com/me?access_token=${accessToken}&fields=id`);
+    const fbData = await fbRes.json();
+
+    if (!fbData || fbData.id !== userID) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid Facebook token'
+      });
+    }
+
+    // ✅ Tiếp tục như cũ
     let user = await User.findOne({ facebookId: userID });
 
     if (!user) {
-      // Nếu người dùng đã đăng ký bằng email nhưng chưa liên kết Facebook
       if (email) {
         const existingUser = await User.findOne({ email });
-
         if (existingUser) {
-          // Liên kết tài khoản Facebook với tài khoản hiện có
           existingUser.facebookId = userID;
           existingUser.authType = 'facebook';
           await existingUser.save();
@@ -223,23 +234,18 @@ export const facebookLogin = async (req, res) => {
         }
       }
 
-      // Nếu không tìm thấy tài khoản, tạo tài khoản mới
       if (!user) {
-        // Tạo username duy nhất từ tên Facebook
         const baseUsername = name.toLowerCase().replace(/\s+/g, '.') || 'facebook.user';
         let username = baseUsername;
         let counter = 1;
 
-        // Đảm bảo username không bị trùng
         while (await User.findOne({ username })) {
           username = `${baseUsername}.${counter}`;
           counter++;
         }
 
-        // Tạo mật khẩu ngẫu nhiên an toàn cho tài khoản
         const password = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
 
-        // Tạo người dùng mới
         user = new User({
           username,
           fullName: name,
@@ -254,25 +260,18 @@ export const facebookLogin = async (req, res) => {
       }
     }
 
-    // Tạo JWT token - Sửa để đồng nhất với login
-    const token = jwt.sign(
-      { id: user._id },  // Thay đổi từ userId thành id để khớp với login
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
-    // Thiết lập cookie
     const cookieOptions = {
       httpOnly: true,
       secure: true,
       sameSite: 'None',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 ngày
+      maxAge: 30 * 24 * 60 * 60 * 1000,
       path: '/',
     };
 
     res.cookie('token', token, cookieOptions);
 
-    // Trả về thông tin người dùng theo định dạng giống login
     res.status(200).json({
       success: true,
       message: 'Đăng nhập bằng Facebook thành công',
