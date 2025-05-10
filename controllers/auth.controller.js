@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
+import crypto from 'crypto';
 
 export const login = async (req, res) => {
   try {
@@ -209,14 +210,23 @@ export const facebookLogin = async (req, res) => {
       });
     }
 
-    // ✅ BƯỚC MỚI: Xác minh token với Facebook
-    const fbRes = await fetch(`https://graph.facebook.com/me?access_token=${accessToken}&fields=id`);
+    // ✅ TÍNH appsecret_proof
+    const appSecret = process.env.FACEBOOK_APP_SECRET;
+    const appSecretProof = crypto
+      .createHmac('sha256', appSecret)
+      .update(accessToken)
+      .digest('hex');
+
+    // ✅ GỌI GRAPH API CÓ appsecret_proof
+    const fbRes = await fetch(
+      `https://graph.facebook.com/me?access_token=${accessToken}&fields=id&appsecret_proof=${appSecretProof}`
+    );
     const fbData = await fbRes.json();
 
     if (!fbData || fbData.id !== userID) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid Facebook token'
+        message: 'Invalid Facebook token or appsecret_proof'
       });
     }
 
