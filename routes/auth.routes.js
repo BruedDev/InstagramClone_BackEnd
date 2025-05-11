@@ -16,7 +16,7 @@ router.get('/facebook', passport.authenticate('facebook', { scope: ['email'] }))
 router.get(
   '/facebook/callback',
   passport.authenticate('facebook', {
-    failureRedirect: '/login',
+    failureRedirect: 'https://instagram-clone-seven-sable.vercel.app/accounts/login',
     session: false
   }),
   facebookCallback
