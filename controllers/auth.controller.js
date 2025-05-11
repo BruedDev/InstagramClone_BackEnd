@@ -225,7 +225,7 @@ export const facebookCallback = (req, res) => {
 
     // Chuyển hướng về frontend với token
     // Frontend cần xử lý route này để lấy token và lưu trữ
-    const redirectUrl = `https://instagram-clone-seven-sable.vercel.app/accounts/login/?token=${token}`;
+    const redirectUrl = `https://instagram-clone-seven-sable.vercel.app/`;
     return res.redirect(redirectUrl);
   } catch (error) {
     console.error('Facebook callback error:', error);
