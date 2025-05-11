@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
-import crypto from 'crypto';
 
 export const login = async (req, res) => {
   try {
@@ -38,10 +37,10 @@ export const login = async (req, res) => {
     // Cài đặt cookie bảo mật
     const cookieOptions = {
       httpOnly: true,       // Không thể truy cập từ JavaScript FE
-      secure: true,         // Yêu cầu HTTPS
-      sameSite: 'None',     // Cho phép cross-site
+      secure: true,
+      sameSite: 'None',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 ngày
-      path: '/'             // Toàn bộ domain đều nhận cookie
+      path: '/'
     };
 
     // Set cookie cho trình duyệt
@@ -52,6 +51,7 @@ export const login = async (req, res) => {
       success: true,
       message: 'Đăng nhập thành công',
       token,
+      cookieSet: true, // Thêm flag để frontend biết server đã cố gắng set cookie
       user: {
         id: user._id,
         username: user.username,
@@ -134,10 +134,31 @@ export const register = async (req, res) => {
     // Lưu user vào database
     await newUser.save();
 
+    // Tạo JWT token
+    const token = jwt.sign(
+      { id: newUser._id },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    // Cài đặt cookie bảo mật
+    const cookieOptions = {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/'
+    };
+
+    // Set cookie cho trình duyệt
+    res.cookie('token', token, cookieOptions);
+
     // Return response
     res.status(201).json({
       success: true,
       message: 'Đăng ký thành công',
+      token,
+      cookieSet: true, // Thêm flag để frontend biết server đã cố gắng set cookie
       user: {
         id: newUser._id,
         username: newUser.username,
@@ -187,9 +208,31 @@ export const logout = async (req, res) => {
 export const checkAuth = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
+
+    // Cập nhật token để gia hạn nếu cần
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    // Làm mới cookie
+    const cookieOptions = {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/'
+    };
+
+    // Set cookie mới
+    res.cookie('token', token, cookieOptions);
+
     res.status(200).json({
       success: true,
-      user
+      user,
+      token, // Thêm token để frontend lưu nếu cần
+      cookieSet: true
     });
   } catch (error) {
     res.status(500).json({
@@ -223,8 +266,7 @@ export const facebookCallback = (req, res) => {
     // Set cookie cho trình duyệt
     res.cookie('token', token, cookieOptions);
 
-    // Chuyển hướng về frontend với token
-    // Frontend cần xử lý route này để lấy token và lưu trữ
+    // Chuyển hướng về frontend với token trong URL params để frontend có thể lưu vào localStorage nếu cần
     const redirectUrl = `https://instagram-clone-seven-sable.vercel.app/`;
     return res.redirect(redirectUrl);
   } catch (error) {
@@ -233,5 +275,3 @@ export const facebookCallback = (req, res) => {
     return res.redirect(`https://instagram-clone-seven-sable.vercel.app/accounts/login?error=auth_failed`);
   }
 };
-
-
