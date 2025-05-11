@@ -53,11 +53,6 @@ const UserSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  facebookId: {
-    type: String,
-    unique: true,
-    sparse: true
-  },
   googleId: {
     type: String,
     unique: true,

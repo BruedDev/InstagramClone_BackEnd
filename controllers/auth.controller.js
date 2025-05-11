@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
+import { OAuth2Client } from 'google-auth-library';
 
 export const login = async (req, res) => {
   try {
@@ -242,10 +243,77 @@ export const checkAuth = async (req, res) => {
   }
 };
 
-export const facebookCallback = (req, res) => {
+const client = new OAuth2Client(process.env.GOOGLE_APP_ID);
+
+// Xử lý đăng nhập/đăng ký bằng Google
+export const googleAuth = async (req, res) => {
   try {
-    // Lấy thông tin user từ req.user (đã được Passport xác thực)
-    const user = req.user;
+    const { tokenId } = req.body;
+
+    if (!tokenId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token không hợp lệ'
+      });
+    }
+
+    // Xác thực token với Google
+    const ticket = await client.verifyIdToken({
+      idToken: tokenId,
+      audience: process.env.GOOGLE_APP_ID
+    });
+
+    const { email_verified, name, email, picture, sub: googleId } = ticket.getPayload();
+
+    // Kiểm tra email đã được xác thực chưa
+    if (!email_verified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email của bạn chưa được xác thực với Google'
+      });
+    }
+
+    // Tìm kiếm user bằng googleId hoặc email
+    let user = await User.findOne({ $or: [{ googleId }, { email }] });
+
+    // Nếu user không tồn tại, tạo mới
+    if (!user) {
+      // Tạo username ngẫu nhiên dựa trên email
+      const usernameBase = email.split('@')[0];
+      let username = usernameBase;
+      let counter = 1;
+
+      // Kiểm tra username có tồn tại không
+      let existingUsername = await User.findOne({ username });
+      while (existingUsername) {
+        username = `${usernameBase}${counter}`;
+        counter++;
+        existingUsername = await User.findOne({ username });
+      }
+
+      // Tạo password ngẫu nhiên
+      const password = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
+
+      user = new User({
+        googleId,
+        username,
+        fullName: name,
+        email,
+        password, // Sẽ được hash tự động bởi pre-save middleware
+        profilePicture: picture || undefined,
+        authType: 'google'
+      });
+
+      await user.save();
+    } else if (!user.googleId) {
+      // Nếu user đã tồn tại nhưng chưa có googleId (đăng ký qua email)
+      user.googleId = googleId;
+      user.authType = 'google';
+      if (!user.profilePicture || user.profilePicture === 'https://thumbs.dreamstime.com/b/default-avatar-profile-icon-vector-social-media-user-portrait-176256935.jpg') {
+        user.profilePicture = picture;
+      }
+      await user.save();
+    }
 
     // Tạo JWT token
     const token = jwt.sign(
@@ -259,20 +327,40 @@ export const facebookCallback = (req, res) => {
       httpOnly: true,
       secure: true,
       sameSite: 'None',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 ngày
       path: '/'
     };
 
     // Set cookie cho trình duyệt
     res.cookie('token', token, cookieOptions);
 
-    // Chuyển hướng về frontend với token và cookieSet flag trong URL params
-    // Thêm cookieSet=true vào URL để frontend biết cookie đã được thiết lập
-    const redirectUrl = `https://instagram-clone-seven-sable.vercel.app/?token=${token}&cookieSet=true`;
-    return res.redirect(redirectUrl);
+    // Trả về thông tin người dùng và token
+    res.status(200).json({
+      success: true,
+      message: 'Đăng nhập Google thành công',
+      token,
+      cookieSet: true,
+      user: {
+        id: user._id,
+        username: user.username,
+        fullName: user.fullName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        profilePicture: user.profilePicture,
+        bio: user.bio,
+        followers: user.followers,
+        following: user.following,
+        isPrivate: user.isPrivate,
+        authType: user.authType,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      }
+    });
   } catch (error) {
-    console.error('Facebook callback error:', error);
-    // Chuyển hướng về trang đăng nhập với thông báo lỗi
-    return res.redirect(`https://instagram-clone-seven-sable.vercel.app/accounts/login?error=auth_failed`);
+    console.error('Lỗi xác thực Google:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xác thực với Google'
+    });
   }
 };

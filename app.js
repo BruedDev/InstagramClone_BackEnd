@@ -1,10 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import session from 'express-session';
 import applyMiddlewares from './middlewares/cors.middleware.js';
 import connectDB from './config/db.config.js';
-import configPassport from './config/passport.config.js';
-import MongoStore from 'connect-mongo';
 import routes from './routes/index.routes.js';
 
 dotenv.config();
@@ -16,27 +13,6 @@ connectDB();
 
 // Áp dụng middleware
 applyMiddlewares(app);
-
-// Cấu hình session
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'instagram-clone-secret',
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({
-      mongoUrl: process.env.MONGODB_URI, // MongoDB URI từ .env
-      collectionName: 'sessions',     // Tên collection lưu session
-    }),
-    cookie: {
-      secure: true,
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 1 day
-    },
-  })
-);
-
-// Cấu hình Passport
-configPassport(app);
 
 // Áp dụng routes
 app.use(routes);

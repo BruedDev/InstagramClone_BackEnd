@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
-import passport from 'passport';
 
 export const verifyToken = async (req, res, next) => {
   try {
@@ -66,5 +65,3 @@ export const verifyToken = async (req, res, next) => {
     });
   }
 };
-
-export const authenticateJWT = passport.authenticate('jwt', { session: false });
