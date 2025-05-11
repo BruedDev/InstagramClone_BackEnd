@@ -1,5 +1,5 @@
 import express from 'express';
-import { login, logout, checkAuth, register, facebookLogin, facebookCallback } from '../controllers/auth.controller.js';
+import { login, logout, checkAuth, register, facebookCallback } from '../controllers/auth.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
 import passport from 'passport';
 
