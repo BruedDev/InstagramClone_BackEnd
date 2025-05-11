@@ -266,9 +266,27 @@ export const facebookCallback = (req, res) => {
     // Set cookie cho trình duyệt
     res.cookie('token', token, cookieOptions);
 
-    // Chuyển hướng về frontend với token trong URL params để frontend có thể lưu vào localStorage nếu cần
-    const redirectUrl = `https://instagram-clone-seven-sable.vercel.app/`;
-    return res.redirect(redirectUrl);
+    // Trả JSON thay vì redirect
+    res.status(200).json({
+      success: true,
+      message: 'Đăng nhập Facebook thành công',
+      token,
+      cookieSet: true,
+      user: {
+        id: user._id,
+        username: user.username,
+        fullName: user.fullName,
+        email: user.email,
+        profilePicture: user.profilePicture,
+        bio: user.bio,
+        followers: user.followers,
+        following: user.following,
+        isPrivate: user.isPrivate,
+        authType: user.authType,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      }
+    });
   } catch (error) {
     console.error('Facebook callback error:', error);
     // Chuyển hướng về trang đăng nhập với thông báo lỗi
