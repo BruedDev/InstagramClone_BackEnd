@@ -63,6 +63,7 @@ export const login = async (req, res) => {
         bio: user.bio,
         followers: user.followers,
         following: user.following,
+        posts: user.posts,
         isPrivate: user.isPrivate,
         authType: user.authType,
         createdAt: user.createdAt,
@@ -142,24 +143,11 @@ export const register = async (req, res) => {
       { expiresIn: '30d' }
     );
 
-    // Cài đặt cookie bảo mật
-    const cookieOptions = {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'None',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-      path: '/'
-    };
-
-    // Set cookie cho trình duyệt
-    res.cookie('token', token, cookieOptions);
-
     // Return response
     res.status(201).json({
       success: true,
       message: 'Đăng ký thành công',
       token,
-      cookieSet: true, // Thêm flag để frontend biết server đã cố gắng set cookie
       user: {
         id: newUser._id,
         username: newUser.username,
@@ -350,6 +338,7 @@ export const googleAuth = async (req, res) => {
         bio: user.bio,
         followers: user.followers,
         following: user.following,
+        posts: user.posts,
         isPrivate: user.isPrivate,
         authType: user.authType,
         createdAt: user.createdAt,
