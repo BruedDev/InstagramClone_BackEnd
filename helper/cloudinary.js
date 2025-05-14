@@ -5,43 +5,63 @@ import fs from 'fs';
 // Tạo thư mục tạm nếu chưa có
 const tempDir = 'temp/';
 if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir); // Tạo thư mục tạm nếu chưa tồn tại
+  fs.mkdirSync(tempDir);
 }
 
 // Cấu hình lưu file vào thư mục tạm
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, tempDir); // Lưu vào thư mục tạm
+    cb(null, tempDir);
   },
   filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname); // Lấy phần mở rộng của file
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9); // Tạo tên file duy nhất
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext); // Đặt tên file
+    const ext = path.extname(file.originalname);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
   },
 });
+
+// Danh sách định dạng hợp lệ (ảnh + video)
+const allowedTypes = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'image/gif',
+  'video/mp4',
+  'video/quicktime',
+];
 
 const upload = multer({
   storage,
   limits: {
-    // Giới hạn dung lượng file: 100MB cho video, 10MB cho ảnh
-    fileSize: (req, file, cb) => {
-      if (file.mimetype.includes('video')) {
-        cb(null, 100 * 1024 * 1024); // Giới hạn video 100MB
-      } else {
-        cb(null, 10 * 1024 * 1024); // Giới hạn ảnh 10MB
-      }
-    },
+    fileSize: 100 * 1024 * 1024, // Giới hạn tạm thời, xử lý trong fileFilter
   },
   fileFilter: function (req, file, cb) {
-    const allowedTypes = ['image/jpeg', 'image/png', 'video/mp4', 'video/quicktime'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true); // Cho phép file hợp lệ
-    } else {
+    // Kiểm tra định dạng file
+    if (!allowedTypes.includes(file.mimetype)) {
       const error = new Error('Định dạng file không hợp lệ');
-      error.code = 'INVALID_FILE_TYPE'; // Thêm mã lỗi
-      cb(error, false); // Từ chối file không hợp lệ
+      error.code = 'INVALID_FILE_TYPE';
+      return cb(error, false);
     }
-  },
+
+    // Kiểm tra dung lượng theo loại file
+    if (file.mimetype.startsWith('video/')) {
+      if (file.size > 100 * 1024 * 1024) {
+        const error = new Error('Video vượt quá giới hạn 100MB');
+        error.code = 'FILE_TOO_LARGE';
+        return cb(error, false);
+      }
+    } else if (file.mimetype.startsWith('image/')) {
+      if (file.size > 10 * 1024 * 1024) {
+        const error = new Error('Ảnh vượt quá giới hạn 10MB');
+        error.code = 'FILE_TOO_LARGE';
+        return cb(error, false);
+      }
+    }
+
+    cb(null, true); // File hợp lệ
+  }
 });
 
 export default upload;
