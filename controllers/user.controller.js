@@ -111,8 +111,25 @@ export const uploadAvatar = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Không có file nào được tải lên' });
     }
 
-    // Upload file lên Cloudinary
+    // Kiểm tra kích thước file sau khi đã lưu
+    const stats = fs.statSync(req.file.path);
+    const fileSizeInBytes = stats.size;
+
+    if (req.file.mimetype.startsWith('image/') && fileSizeInBytes > 10 * 1024 * 1024) {
+      fs.unlinkSync(req.file.path); // xoá file tạm
+      return res.status(400).json({ success: false, message: 'Ảnh vượt quá giới hạn 10MB' });
+    }
+
+    if (req.file.mimetype.startsWith('video/') && fileSizeInBytes > 100 * 1024 * 1024) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ success: false, message: 'Video vượt quá giới hạn 100MB' });
+    }
+
+    // Upload lên Cloudinary
     const result = await uploadImage(req.file.path, 'avatars');
+
+    // Xoá file tạm sau khi upload thành công
+    fs.unlinkSync(req.file.path);
 
     // Cập nhật thông tin người dùng
     const user = await User.findByIdAndUpdate(
@@ -131,6 +148,9 @@ export const uploadAvatar = async (req, res) => {
     });
   } catch (error) {
     console.error('Lỗi khi upload avatar:', error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path); // Xoá file nếu có lỗi
+    }
     res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
   }
 };
