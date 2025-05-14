@@ -1,6 +1,7 @@
 import User from '../models/user.model.js';
 import cloudinary from '../config/cloudinary.config.js';
 import { uploadImage } from '../utils/cloudinaryUpload.js';
+import fs from 'fs';
 
 // Your existing deleteUser function
 export const deleteUser = async (req, res) => {
