@@ -35,7 +35,7 @@ const allowedTypes = [
 const upload = multer({
   storage,
   limits: {
-    fileSize: 100 * 1024 * 1024, // Giới hạn tạm thời, xử lý trong fileFilter
+    fileSize: 100 * 1024 * 1024,
   },
   fileFilter: function (req, file, cb) {
     // Kiểm tra định dạng file
