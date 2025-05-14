@@ -4,6 +4,7 @@ import applyMiddlewares from './middlewares/cors.middleware.js';
 import connectDB from './config/db.config.js';
 import routes from './routes/index.routes.js';
 
+
 dotenv.config();
 
 const app = express();

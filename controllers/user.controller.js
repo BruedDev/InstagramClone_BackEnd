@@ -1,4 +1,6 @@
 import User from '../models/user.model.js';
+import cloudinary from '../config/cloudinary.config.js';
+import { uploadImage } from '../utils/cloudinaryUpload.js';
 
 // Your existing deleteUser function
 export const deleteUser = async (req, res) => {
@@ -80,6 +82,12 @@ export const getUser = async (req, res) => {
       });
     }
 
+    // ✅ Cấp tích xanh nếu là username cụ thể
+    if (user.username === 'vanloc19_6' && !user.checkMark) {
+      await User.updateOne({ username: 'vanloc19_6' }, { checkMark: true });
+      user.checkMark = true; // gán tạm vào object trả về
+    }
+
     // Return the user data
     res.status(200).json({
       success: true,
@@ -91,5 +99,65 @@ export const getUser = async (req, res) => {
       success: false,
       message: 'Lỗi máy chủ'
     });
+  }
+};
+
+// Upload avatar
+export const uploadAvatar = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Không có file nào được tải lên' });
+    }
+
+    // Upload file lên Cloudinary
+    const result = await uploadImage(req.file.path, 'avatars');
+
+    // Cập nhật thông tin người dùng
+    const user = await User.findByIdAndUpdate(
+      userId,
+      {
+        profilePicture: result.secure_url,
+        profilePicturePublicId: result.public_id,
+      },
+      { new: true }
+    ).select('-password');
+
+    res.status(200).json({
+      success: true,
+      message: 'Tải ảnh đại diện thành công',
+      user,
+    });
+  } catch (error) {
+    console.error('Lỗi khi upload avatar:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
+};
+
+// Xóa avatar
+export const deleteAvatar = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
+    }
+
+    // Nếu có ảnh đại diện thì xóa khỏi Cloudinary
+    if (user.profilePicturePublicId) {
+      await cloudinary.uploader.destroy(user.profilePicturePublicId);
+    }
+
+    // Cập nhật user: xóa avatar và khôi phục ảnh mặc định trong DB
+    user.profilePicture = user.schema.path('profilePicture').defaultValue;  // Lấy giá trị mặc định từ schema
+    user.profilePicturePublicId = ''; // Cập nhật PublicId về rỗng
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'Đã xóa ảnh đại diện' });
+  } catch (error) {
+    console.error('Lỗi khi xóa avatar:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
   }
 };
