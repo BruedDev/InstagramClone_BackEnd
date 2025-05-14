@@ -85,4 +85,5 @@ UserSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-export default mongoose.model('user', UserSchema, 'users');
+// Đăng ký model với tên 'User' (chữ hoa)
+export default mongoose.model('User', UserSchema, 'users');
