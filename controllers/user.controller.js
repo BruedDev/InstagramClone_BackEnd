@@ -111,6 +111,12 @@ export const uploadAvatar = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Không có file nào được tải lên' });
     }
 
+    console.log('File đã nhận:', {
+      path: req.file.path,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    });
+
     // Upload file lên Cloudinary
     const result = await uploadImage(req.file.path, 'avatars');
 
@@ -131,7 +137,7 @@ export const uploadAvatar = async (req, res) => {
     });
   } catch (error) {
     console.error('Lỗi khi upload avatar:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ: ' + error.message });
   }
 };
 
