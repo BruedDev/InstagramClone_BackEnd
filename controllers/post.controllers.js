@@ -136,10 +136,16 @@ export const deletePostById = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Bạn không có quyền xóa bài viết này' });
     }
 
-    // TODO: Nếu bạn dùng Cloudinary, bạn có thể xóa file tại đây bằng publicId:
+    // Nếu bạn dùng Cloudinary, bạn có thể xóa file tại đây bằng publicId:
     // await cloudinary.uploader.destroy(post.filePublicId);
 
     await post.deleteOne();
+
+    // Cập nhật lại mảng posts của user (loại bỏ postId vừa xóa)
+    await User.findByIdAndUpdate(
+      userId,
+      { $pull: { posts: postId } }
+    );
 
     res.status(200).json({ success: true, message: 'Xóa bài viết thành công' });
   } catch (error) {

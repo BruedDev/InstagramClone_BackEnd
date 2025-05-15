@@ -161,3 +161,25 @@ export const deleteAvatar = async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
   }
 };
+
+export const updateBio = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { bio } = req.body; // bio có thể rỗng hoặc có nội dung
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { bio: bio || '' }, // Nếu không có nội dung thì set rỗng
+      { new: true }
+    ).select('-password');
+
+    res.status(200).json({
+      success: true,
+      message: 'Cập nhật bio thành công',
+      user,
+    });
+  } catch (error) {
+    console.error('Lỗi khi cập nhật bio:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
+};
