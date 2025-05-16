@@ -1,8 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import fs from 'fs';
 import http from 'http';
-import https from 'https';
 import applyMiddlewares from './middlewares/cors.middleware.js';
 import connectDB from './config/db.config.js';
 import routes from './routes/index.routes.js';
@@ -11,22 +9,7 @@ import { initSocket } from './middlewares/socket.middleware.js';
 dotenv.config();
 
 const app = express();
-
-let server;
-
-const keyPath = process.env.SSL_KEY_PATH || '/path/to/key.pem';
-const certPath = process.env.SSL_CERT_PATH || '/path/to/cert.pem';
-
-if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-  const privateKey = fs.readFileSync(keyPath, 'utf8');
-  const certificate = fs.readFileSync(certPath, 'utf8');
-
-  server = https.createServer({ key: privateKey, cert: certificate }, app);
-  console.log('⚡️ Server đang chạy trên HTTPS');
-} else {
-  server = http.createServer(app);
-  console.log('⚡️ Server đang chạy trên HTTP');
-}
+const server = http.createServer(app);
 
 // Khởi tạo Socket.IO
 initSocket(server);
