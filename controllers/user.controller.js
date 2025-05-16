@@ -85,7 +85,8 @@ export const getUser = async (req, res) => {
     // ✅ Cấp tích xanh nếu là username cụ thể
     if (user.username === 'vanloc19_6' && !user.checkMark) {
       await User.updateOne({ username: 'vanloc19_6' }, { checkMark: true });
-      user.checkMark = true; // gán tạm vào object trả về
+      // Lấy lại user từ DB để đảm bảo checkMark là true và đúng kiểu boolean
+      user = await User.findOne({ username: 'vanloc19_6' }).select('-password').lean();
     }
 
     // Return the user data
@@ -180,6 +181,37 @@ export const updateBio = async (req, res) => {
     });
   } catch (error) {
     console.error('Lỗi khi cập nhật bio:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
+};
+
+export const suggestUsers = async (req, res) => {
+  try {
+    const myId = req.user.id;
+
+    let users = await User.find({ _id: { $ne: myId } })
+      .select('-password')
+      .lean();
+
+    // Đảm bảo checkMark là boolean (true/false)
+    users = users.map(u => ({
+      ...u,
+      checkMark: !!u.checkMark
+    }));
+
+    // Ưu tiên người có checkMark lên đầu
+    users.sort((a, b) => {
+      if (b.checkMark && !a.checkMark) return -1;
+      if (a.checkMark && !b.checkMark) return 1;
+      return 0;
+    });
+
+    res.status(200).json({
+      success: true,
+      users,
+    });
+  } catch (error) {
+    console.error('Lỗi khi gợi ý người dùng:', error);
     res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
   }
 };

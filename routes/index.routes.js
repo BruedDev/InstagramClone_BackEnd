@@ -2,11 +2,15 @@ import express from 'express';
 import authRoutes from './auth.routes.js';
 import userRoutes from './user.routes.js';
 import postRoutes from './post.routes.js';
+import homeRoutes from './home.routes.js';
+import messengerRoutes from './messenger.routes.js';
 
 const router = express.Router();
 
 router.use('/api/auth', authRoutes);
 router.use('/api/user', userRoutes);
 router.use('/api/posts', postRoutes);
+router.use('/api/home', homeRoutes);
+router.use('/api/messenger', messengerRoutes);
 
 export default router;

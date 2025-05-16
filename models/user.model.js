@@ -62,6 +62,10 @@ const UserSchema = new mongoose.Schema({
     unique: true,
     sparse: true,
   },
+  checkMark: {
+    type: Boolean,
+    default: false,
+  },
   authType: {
     type: String,
     enum: ['local', 'facebook', 'google'],

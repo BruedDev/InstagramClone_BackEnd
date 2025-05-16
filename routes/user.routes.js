@@ -1,5 +1,5 @@
 import express from 'express';
-import { deleteUser, getUser, uploadAvatar, deleteAvatar, updateBio } from '../controllers/user.controller.js';
+import { deleteUser, getUser, uploadAvatar, deleteAvatar, updateBio, suggestUsers } from '../controllers/user.controller.js';
 import { verifyToken } from '../middlewares/auth.middleware.js';
 import upload from '../helper/cloudinary.js';
 
@@ -12,5 +12,6 @@ router.delete('/deleteUser/:id', verifyToken, deleteUser);
 router.post('/uploadAvatar', verifyToken, upload.single('file'), uploadAvatar);
 router.delete('/deleteAvatar', verifyToken, deleteAvatar);
 router.put('/updateBio', verifyToken, updateBio);
+router.get('/suggestUsers', verifyToken, suggestUsers);
 
 export default router;
