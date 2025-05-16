@@ -7,9 +7,23 @@ let io;
 const onlineUsers = new Map();
 
 export const initSocket = (server) => {
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://instagram-clone-seven-sable.vercel.app',
+    process.env.FRONTEND_URL,
+  ].filter(Boolean);
+
   io = new SocketIOServer(server, {
     cors: {
-      origin: '*',
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
       methods: ['GET', 'POST'],
     },
   });
