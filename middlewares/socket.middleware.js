@@ -16,15 +16,18 @@ export const initSocket = (server) => {
 
   io = new SocketIOServer(server, {
     cors: {
-      origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) {
+      origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {
+          console.error('Blocked Socket.io CORS origin:', origin);
           callback(new Error('Not allowed by CORS'));
         }
       },
-      methods: ['GET', 'POST'],
+      credentials: true, // Thêm cái này để khớp với Express
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // Khớp với Express
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], // Khớp với Express
+      exposedHeaders: ['Set-Cookie', 'Authorization'], // Khớp với Express
     },
   });
 
