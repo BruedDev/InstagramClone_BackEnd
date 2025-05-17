@@ -6,7 +6,6 @@ export const handleMessages = (socket, io, onlineUsers) => {
   socket.on('joinUserRoom', (userId) => {
     if (!userId) return;
     socket.join(userId.toString());
-    console.log(`Socket ${socket.id} joined room ${userId}`);
   });
 
   socket.on('sendMessage', async (data) => {

@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { handleMessages } from '../server/message.service.js';
 import { handleCall } from '../server/call.service.js';
+
 let io;
 
 // Map lưu trữ userId với danh sách socketId kết nối
@@ -24,56 +25,50 @@ export const initSocket = (server) => {
           callback(new Error('Not allowed by CORS'));
         }
       },
-      credentials: true, // Thêm cái này để khớp với Express
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // Khớp với Express
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], // Khớp với Express
-      exposedHeaders: ['Set-Cookie', 'Authorization'], // Khớp với Express
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      exposedHeaders: ['Set-Cookie', 'Authorization'],
     },
   });
+
+  // Gắn onlineUsers vào io để controller truy cập được
+  io.onlineUsers = onlineUsers;
 
   io.on('connection', (socket) => {
     console.log(`🔌 Socket connected: ${socket.id}`);
 
-    // Khi client gửi event xác nhận userId (ví dụ client gửi ngay sau khi kết nối)
+    // Khi client gửi event xác nhận userId (gửi ngay sau khi kết nối)
     socket.on('userOnline', (userId) => {
       if (!userId) return;
 
-      // Lấy danh sách socketId hiện tại của user hoặc tạo mới
       let userSockets = onlineUsers.get(userId) || new Set();
-
       userSockets.add(socket.id);
       onlineUsers.set(userId, userSockets);
 
-      // Thêm: tự động join phòng theo userId
+      // Join phòng theo userId
       socket.join(userId.toString());
 
-      // Thêm: thông báo cho người dùng khác biết người này đang online
+      // Thông báo cho người khác biết user này online
       socket.broadcast.emit('userStatusChange', { userId, status: 'online' });
-
-      console.log(`👤 User ${userId} connected, total unique online users: ${onlineUsers.size}`);
     });
 
-    // Xử lý tin nhắn (logic tách ra file khác)
+    // Xử lý tin nhắn và call
     handleMessages(socket, io, onlineUsers);
     handleCall(socket, io, onlineUsers);
 
     socket.on('disconnect', () => {
-      console.log(`❌ Socket disconnected: ${socket.id}`);
-
-      // Tìm userId tương ứng với socket này để xóa socketId đó
+      // Xóa socketId khỏi user
       for (const [userId, socketSet] of onlineUsers.entries()) {
         if (socketSet.has(socket.id)) {
           socketSet.delete(socket.id);
           if (socketSet.size === 0) {
-            onlineUsers.delete(userId); // Xóa user nếu hết socket kết nối
-
-            // Thêm: thông báo cho người dùng khác biết người này đã offline
+            onlineUsers.delete(userId);
+            // Thông báo cho người khác biết user này offline
             socket.broadcast.emit('userStatusChange', { userId, status: 'offline' });
           } else {
             onlineUsers.set(userId, socketSet);
           }
-
-          console.log(`👤 User ${userId} disconnected one socket, total unique online users: ${onlineUsers.size}`);
           break;
         }
       }

@@ -3,7 +3,8 @@ import {
   sendMessage,
   getMessages,
   getUserMessages,
-  getUnreadCount
+  getUnreadCount,
+  checkUserStatus
 } from '../controllers/messenger.controller.js';
 import { verifyToken } from '../middlewares/auth.middleware.js';
 
@@ -20,6 +21,9 @@ router.get('/users', verifyToken, getUserMessages);
 
 // Lấy số lượng tin nhắn chưa đọc
 router.get('/unread-count/:senderId', verifyToken, getUnreadCount);
+
+// trạng thái online/ offline
+router.get('/status/:userId', verifyToken, checkUserStatus);
 
 
 export default router;

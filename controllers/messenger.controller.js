@@ -1,5 +1,6 @@
 import Message from '../models/messenger.model.js';
 import User from '../models/user.model.js';
+import { getIO } from '../middlewares/socket.middleware.js';
 
 // Gửi tin nhắn (bạn đã viết rồi)
 export const sendMessage = async (req, res) => {
@@ -128,3 +129,20 @@ export const getUnreadCount = async (req, res) => {
     return res.status(500).json({ message: 'Lỗi server' });
   }
 };
+
+export const checkUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const io = getIO();
+    const onlineUsers = io.onlineUsers || new Map();
+
+    const isOnline = onlineUsers.has(userId);
+    return res.status(200).json({
+      userId,
+      status: isOnline ? 'online' : 'offline'
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Lỗi server khi kiểm tra trạng thái online' });
+  }
+};
+
