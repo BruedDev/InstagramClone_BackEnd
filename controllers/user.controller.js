@@ -1,6 +1,7 @@
 import User from '../models/user.model.js';
 import cloudinary from '../config/cloudinary.config.js';
 import { uploadImage } from '../utils/cloudinaryUpload.js';
+import mongoose from 'mongoose';
 
 // Your existing deleteUser function
 export const deleteUser = async (req, res) => {
@@ -50,31 +51,28 @@ export const deleteUser = async (req, res) => {
   }
 };
 
-// New function to get user by ID or username
+// Function to get user by ID or username
 export const getUser = async (req, res) => {
   try {
     const { identifier } = req.params; // identifier can be either ID or username
 
-    // First, try to find by ID (if the identifier is a valid MongoDB ObjectId)
     let user = null;
 
     // Check if identifier is a valid MongoDB ObjectId
-    const isValidObjectId = identifier.match(/^[0-9a-fA-F]{24}$/);
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(identifier);
 
     if (isValidObjectId) {
       user = await User.findById(identifier)
-        .select('-password') // Exclude password from the result
-        .lean(); // Convert to plain JavaScript object
+        .select('-password')
+        .lean();
     }
 
-    // If not found by ID or not a valid ID, try finding by username
     if (!user) {
       user = await User.findOne({ username: identifier })
         .select('-password')
         .lean();
     }
 
-    // Check if user exists
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -82,14 +80,29 @@ export const getUser = async (req, res) => {
       });
     }
 
-    // ✅ Cấp tích xanh nếu là username cụ thể
-    if (user.username === 'vanloc19_6' && !user.checkMark) {
-      await User.updateOne({ username: 'vanloc19_6' }, { checkMark: true });
-      // Lấy lại user từ DB để đảm bảo checkMark là true và đúng kiểu boolean
-      user = await User.findOne({ username: 'vanloc19_6' }).select('-password').lean();
+    // ✅ Buff đặc biệt cho vanloc19_6
+    if (user.username === 'vanloc19_6') {
+      // Cấp tích xanh
+      if (!user.checkMark) {
+        await User.updateOne({ _id: user._id }, { $set: { checkMark: true } });
+        user.checkMark = true;
+      }
+
+      // Buff followers lên 1M (1,000,000)
+      const buffedFollowersCount = 1000000;
+      user.followersCount = user.followers.length + buffedFollowersCount;
+      user.isBuffed = true;
+      user.realFollowers = user.followers.length;
+      user.buffedFollowers = buffedFollowersCount;
+    } else {
+      // Người dùng bình thường
+      user.followersCount = user.followers.length;
+      user.isBuffed = false;
     }
 
-    // Return the user data
+    // Thêm các thông tin bổ sung
+    user.followingCount = user.following.length;
+
     res.status(200).json({
       success: true,
       user
@@ -112,27 +125,40 @@ export const uploadAvatar = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Không có file nào được tải lên' });
     }
 
+    const userToUpdate = await User.findById(userId);
+    if (!userToUpdate) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
+    }
+
+    if (userToUpdate.profilePicturePublicId) {
+      try {
+        await cloudinary.uploader.destroy(userToUpdate.profilePicturePublicId);
+      } catch (cloudinaryError) {
+        console.error('Lỗi khi xóa ảnh cũ trên Cloudinary:', cloudinaryError);
+      }
+    }
+
     // Upload file lên Cloudinary
     const result = await uploadImage(req.file.path, 'avatars');
 
     // Cập nhật thông tin người dùng
-    const user = await User.findByIdAndUpdate(
+    const updatedUser = await User.findByIdAndUpdate(
       userId,
       {
         profilePicture: result.secure_url,
         profilePicturePublicId: result.public_id,
       },
       { new: true }
-    ).select('-password');
+    ).select('-password').lean();
 
     res.status(200).json({
       success: true,
       message: 'Tải ảnh đại diện thành công',
-      user,
+      user: updatedUser,
     });
   } catch (error) {
     console.error('Lỗi khi upload avatar:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ khi tải ảnh đại diện' });
   }
 };
 
@@ -146,20 +172,27 @@ export const deleteAvatar = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
     }
 
-    // Nếu có ảnh đại diện thì xóa khỏi Cloudinary
+    // Nếu có ảnh đại diện và public ID thì xóa khỏi Cloudinary
     if (user.profilePicturePublicId) {
       await cloudinary.uploader.destroy(user.profilePicturePublicId);
     }
 
-    // Cập nhật user: xóa avatar và khôi phục ảnh mặc định trong DB
-    user.profilePicture = user.schema.path('profilePicture').defaultValue;  // Lấy giá trị mặc định từ schema
-    user.profilePicturePublicId = ''; // Cập nhật PublicId về rỗng
+    // Cập nhật user: khôi phục ảnh mặc định và xóa public ID trong DB
+    user.profilePicture = User.schema.path('profilePicture').defaultValue;
+    user.profilePicturePublicId = null;
     await user.save();
 
-    res.status(200).json({ success: true, message: 'Đã xóa ảnh đại diện' });
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    res.status(200).json({
+      success: true,
+      message: 'Đã xóa ảnh đại diện',
+      profilePicture: userResponse.profilePicture
+    });
   } catch (error) {
     console.error('Lỗi khi xóa avatar:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ khi xóa ảnh đại diện' });
   }
 };
 
@@ -168,41 +201,73 @@ export const updateBio = async (req, res) => {
     const userId = req.user.id;
     const { bio } = req.body; // bio có thể rỗng hoặc có nội dung
 
-    const user = await User.findByIdAndUpdate(
+    const updatedUser = await User.findByIdAndUpdate(
       userId,
       { bio: bio || '' }, // Nếu không có nội dung thì set rỗng
-      { new: true }
-    ).select('-password');
+      { new: true, runValidators: true }
+    ).select('-password').lean();
+
+    if (!updatedUser) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
+    }
 
     res.status(200).json({
       success: true,
       message: 'Cập nhật bio thành công',
-      user,
+      user: updatedUser,
     });
   } catch (error) {
     console.error('Lỗi khi cập nhật bio:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: 'Dữ liệu không hợp lệ', errors: error.errors });
+    }
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ khi cập nhật bio' });
   }
 };
 
 export const suggestUsers = async (req, res) => {
   try {
     const myId = req.user.id;
+    const limit = parseInt(req.query.limit) || 10;
 
-    let users = await User.find({ _id: { $ne: myId } })
-      .select('-password')
+    const currentUser = await User.findById(myId).select('following').lean();
+    const followingIds = currentUser ? currentUser.following.map(id => id.toString()) : [];
+
+    let users = await User.find({
+      _id: { $ne: myId, $nin: followingIds }
+    })
+      .select('-password -email -phoneNumber -followers -following -posts')
+      .limit(limit)
       .lean();
 
-    // Đảm bảo checkMark là boolean (true/false)
-    users = users.map(u => ({
-      ...u,
-      checkMark: !!u.checkMark
-    }));
+    users = users.map(u => {
+      // Buff cho vanloc19_6
+      if (u.username === 'vanloc19_6') {
+        return {
+          ...u,
+          checkMark: true,
+          followersCount: 1000000,
+          isBuffed: true
+        };
+      }
+      return {
+        ...u,
+        checkMark: !!u.checkMark,
+        followersCount: 0, // Không hiển thị số followers thật cho suggestion
+        isBuffed: false
+      };
+    });
 
-    // Ưu tiên người có checkMark lên đầu
     users.sort((a, b) => {
-      if (b.checkMark && !a.checkMark) return -1;
-      if (a.checkMark && !b.checkMark) return 1;
+      // vanloc19_6 luôn ở đầu
+      if (a.username === 'vanloc19_6') return -1;
+      if (b.username === 'vanloc19_6') return 1;
+
+      // Sau đó sắp xếp theo checkMark và username
+      if (b.checkMark && !a.checkMark) return 1;
+      if (!b.checkMark && a.checkMark) return -1;
+      if (a.username < b.username) return -1;
+      if (a.username > b.username) return 1;
       return 0;
     });
 
@@ -212,6 +277,192 @@ export const suggestUsers = async (req, res) => {
     });
   } catch (error) {
     console.error('Lỗi khi gợi ý người dùng:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ khi gợi ý người dùng' });
+  }
+};
+
+// --- Chức năng Follow / Unfollow ---
+
+export const toggleFollowUser = async (req, res) => {
+  try {
+    const currentUserId = req.user.id; // ID người dùng đang đăng nhập
+    const param = req.params.id; // có thể là id hoặc username
+
+    // 1. Xử lý tham số param có thể là ObjectId hoặc username
+    let targetUser;
+
+    if (mongoose.Types.ObjectId.isValid(param)) {
+      // Nếu là ObjectId hợp lệ, tìm theo _id
+      targetUser = await User.findById(param).select('username followers');
+    }
+    if (!targetUser) {
+      // Nếu không tìm thấy theo id, hoặc param không phải ObjectId hợp lệ, thử tìm theo username
+      targetUser = await User.findOne({ username: param }).select('username followers');
+    }
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng mục tiêu.' });
+    }
+
+    // 2. Không cho thao tác với chính mình
+    if (currentUserId === targetUser._id.toString()) {
+      return res.status(400).json({ success: false, message: 'Bạn không thể tự tương tác với chính mình theo cách này.' });
+    }
+
+    // 3. Tìm người dùng hiện tại
+    const currentUser = await User.findById(currentUserId).select('following');
+
+    if (!currentUser) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng hiện tại.' });
+    }
+
+    // 4. Kiểm tra trạng thái follow
+    const isCurrentlyFollowing = currentUser.following.includes(targetUser._id);
+
+    let message;
+    let actionStatus;
+
+    if (isCurrentlyFollowing) {
+      // Hủy theo dõi
+      await User.findByIdAndUpdate(currentUserId, {
+        $pull: { following: targetUser._id }
+      });
+      await User.findByIdAndUpdate(targetUser._id, {
+        $pull: { followers: currentUserId }
+      });
+      message = `Đã hủy theo dõi ${targetUser.username} thành công.`;
+      actionStatus = 'unfollowed';
+    } else {
+      // Theo dõi
+      await User.findByIdAndUpdate(currentUserId, {
+        $addToSet: { following: targetUser._id }
+      });
+      await User.findByIdAndUpdate(targetUser._id, {
+        $addToSet: { followers: currentUserId }
+      });
+      message = `Đã theo dõi ${targetUser.username} thành công.`;
+      actionStatus = 'followed';
+    }
+
+    return res.status(200).json({
+      success: true,
+      message,
+      action: actionStatus,
+      followUser: actionStatus === 'followed',
+    });
+  } catch (error) {
+    console.error('Lỗi khi xử lý theo dõi/hủy theo dõi:', error);
+    if (error.name === 'CastError' && error.kind === 'ObjectId') {
+      return res.status(400).json({ success: false, message: 'ID người dùng không hợp lệ.' });
+    }
+    return res.status(500).json({ success: false, message: 'Lỗi máy chủ khi xử lý yêu cầu.' });
+  }
+};
+
+export const getFollowing = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const user = await User.findById(userId)
+      .populate({
+        path: 'following',
+        select: 'username fullName profilePicture checkMark isPrivate'
+      })
+      .select('username fullName')
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
+    }
+
+    // Cập nhật checkMark cho vanloc19_6 trong danh sách following
+    const following = user.following.map(followingUser => {
+      if (followingUser.username === 'vanloc19_6') {
+        return { ...followingUser, checkMark: true };
+      }
+      return followingUser;
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Lấy danh sách đang theo dõi của ${user.username} thành công`,
+      username: user.username,
+      fullName: user.fullName,
+      following: following
+    });
+
+  } catch (error) {
+    console.error('Lỗi khi lấy danh sách đang theo dõi:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ khi lấy danh sách đang theo dõi' });
+  }
+};
+
+export const getFollowers = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const user = await User.findById(userId)
+      .populate({
+        path: 'followers',
+        select: 'username fullName profilePicture checkMark isPrivate'
+      })
+      .select('username fullName')
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
+    }
+
+    let allFollowers = [...user.followers];
+    let totalFollowersCount = user.followers.length;
+
+    // ✅ Buff đặc biệt cho vanloc19_6
+    if (user.username === 'vanloc19_6') {
+      const buffedFollowersCount = 1000000;
+      totalFollowersCount = user.followers.length + buffedFollowersCount;
+
+      // Tạo một số followers ảo để hiển thị (chỉ hiển thị 100 followers ảo đầu tiên để không quá tải)
+      const sampleVirtualFollowers = [];
+      const displayCount = Math.min(100, buffedFollowersCount);
+
+      // Tạo các tên username đa dạng và thực tế hơn
+      const prefixes = ['user', 'pro', 'official', 'real', 'fan', 'love', 'super', 'best', 'top', 'cool'];
+      const suffixes = ['_official', '_pro', '_fan', '_love', '_2024', '_2025', '_vip', '_real', '_best', ''];
+
+      for (let i = 1; i <= displayCount; i++) {
+        const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+        const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+        const randomNum = Math.floor(Math.random() * 9999) + 1;
+
+        sampleVirtualFollowers.push({
+          _id: `virtual_${i}`,
+          username: `${prefix}${randomNum}${suffix}`,
+          fullName: `Fan ${i} của vanloc19_6`,
+          profilePicture: 'https://thumbs.dreamstime.com/b/default-avatar-profile-icon-vector-social-media-user-portrait-176256935.jpg',
+          checkMark: Math.random() > 0.98, // 2% chance có tích xanh
+          isPrivate: Math.random() > 0.8, // 20% chance là private
+          isVirtual: true // Đánh dấu là followers ảo
+        });
+      }
+
+      // Trộn followers ảo vào đầu danh sách
+      allFollowers = [...sampleVirtualFollowers, ...user.followers];
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Lấy danh sách người theo dõi của ${user.username} thành công`,
+      username: user.username,
+      fullName: user.fullName,
+      totalFollowersCount: totalFollowersCount,
+      realFollowersCount: user.followers.length,
+      displayedFollowersCount: allFollowers.length,
+      isBuffed: user.username === 'vanloc19_6',
+      followers: allFollowers
+    });
+
+  } catch (error) {
+    console.error('Lỗi khi lấy danh sách người theo dõi:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ khi lấy danh sách người theo dõi' });
   }
 };
