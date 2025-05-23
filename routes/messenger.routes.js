@@ -4,7 +4,9 @@ import {
   getMessages,
   getUserMessages,
   getUnreadCount,
-  checkUserStatus
+  checkUserStatus,
+  getRecentChats,
+  markMessagesAsRead
 } from '../controllers/messenger.controller.js';
 import { verifyToken } from '../middlewares/auth.middleware.js';
 
@@ -23,7 +25,9 @@ router.get('/users', verifyToken, getUserMessages);
 router.get('/unread-count/:senderId', verifyToken, getUnreadCount);
 
 // trạng thái online/ offline
-router.get('/status/:userId', verifyToken, checkUserStatus);
+router.get('/status/:identifier', checkUserStatus);
 
+router.get('/recent-chats', verifyToken, getRecentChats);
 
+router.post('/mark-as-read', verifyToken, markMessagesAsRead);
 export default router;

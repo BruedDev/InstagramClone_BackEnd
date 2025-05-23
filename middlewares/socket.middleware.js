@@ -2,6 +2,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { handleMessages } from '../server/message.service.js';
 import { handleCall } from '../server/call.service.js';
 import { createCommentForPost, createCommentForReel } from '../server/comment.server.js';
+import User from '../models/user.model.js';
 
 let io;
 const onlineUsers = new Map();
@@ -33,13 +34,27 @@ export const initSocket = (server) => {
   io.onlineUsers = onlineUsers;
 
   io.on('connection', (socket) => {
-    socket.on('userOnline', (userId) => {
+    socket.on('userOnline', async (userId) => {
       if (!userId) return;
       let userSockets = onlineUsers.get(userId) || new Set();
       userSockets.add(socket.id);
       onlineUsers.set(userId, userSockets);
       socket.join(userId.toString());
-      socket.broadcast.emit('userStatusChange', { userId, status: 'online' });
+
+      // Cập nhật trạng thái và thời gian online trong DB
+      const now = new Date();
+      await User.findByIdAndUpdate(userId, {
+        isOnline: true,
+        lastActive: now,
+        lastOnline: now
+      });
+
+      socket.broadcast.emit('userStatusChange', {
+        userId,
+        status: 'online',
+        lastActive: now,
+        lastOnline: now
+      });
     });
     // Bổ sung xử lý comment realtime
     socket.on('comment:typing', ({ itemId, itemType, user }) => {
@@ -125,13 +140,27 @@ export const initSocket = (server) => {
     handleMessages(socket, io, onlineUsers);
     handleCall(socket, io, onlineUsers);
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       for (const [userId, socketSet] of onlineUsers.entries()) {
         if (socketSet.has(socket.id)) {
           socketSet.delete(socket.id);
           if (socketSet.size === 0) {
             onlineUsers.delete(userId);
-            socket.broadcast.emit('userStatusChange', { userId, status: 'offline' });
+
+            // Cập nhật trạng thái và thời gian offline trong DB
+            const now = new Date();
+            await User.findByIdAndUpdate(userId, {
+              isOnline: false,
+              lastActive: now,
+              lastOnline: now
+            });
+
+            socket.broadcast.emit('userStatusChange', {
+              userId,
+              status: 'offline',
+              lastActive: now,
+              lastOnline: now
+            });
           } else {
             onlineUsers.set(userId, socketSet);
           }

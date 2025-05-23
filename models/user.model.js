@@ -75,6 +75,18 @@ const UserSchema = new mongoose.Schema({
     enum: ['local', 'facebook', 'google'],
     default: 'local'
   },
+  isOnline: {
+    type: Boolean,
+    default: false,
+  },
+  lastActive: {
+    type: Date,
+    default: Date.now
+  },
+  lastOnline: {
+    type: Date,
+    default: null
+  },
 }, { timestamps: true });
 
 UserSchema.pre('save', async function (next) {

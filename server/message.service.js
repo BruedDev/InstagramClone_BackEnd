@@ -25,8 +25,9 @@ export const handleMessages = (socket, io, onlineUsers) => {
         message: data.message,
       });
 
-      // Lấy thông tin người gửi để gửi về client (username, fullName, checkMark)
-      const author = await User.findById(data.senderId).select('username fullName checkMark');
+      // Lấy thông tin người gửi để gửi về client
+      const author = await User.findById(data.senderId)
+        .select('username fullName checkMark profilePicture lastActive lastOnline');
 
       // Tạo đối tượng gửi lại client
       const response = {
@@ -52,6 +53,56 @@ export const handleMessages = (socket, io, onlineUsers) => {
         status: 'sent'
       });
 
+      // Tạo đối tượng cập nhật recent chat cho người gửi
+      const senderRecentChat = {
+        user: {
+          _id: author._id,
+          username: author.username,
+          profilePicture: author.profilePicture,
+          checkMark: !!author.checkMark,
+          isOnline: onlineUsers.has(author._id.toString()),
+          lastActive: author.lastActive,
+          lastOnline: author.lastOnline
+        },
+        lastMessage: {
+          _id: newMessage._id,
+          message: newMessage.message,
+          isOwnMessage: true,
+          createdAt: newMessage.createdAt,
+          isRead: newMessage.isRead
+        }
+      };
+
+      // Emit cập nhật recent chat cho người gửi
+      socket.emit('updateRecentChat', senderRecentChat);
+
+      // Lấy thông tin người nhận
+      const receiver = await User.findById(data.receiverId)
+        .select('username profilePicture checkMark lastActive lastOnline');
+
+      // Tạo đối tượng cập nhật recent chat cho người nhận
+      const receiverRecentChat = {
+        user: {
+          _id: receiver._id,
+          username: receiver.username,
+          profilePicture: receiver.profilePicture,
+          checkMark: !!receiver.checkMark,
+          isOnline: onlineUsers.has(receiver._id.toString()),
+          lastActive: receiver.lastActive,
+          lastOnline: receiver.lastOnline
+        },
+        lastMessage: {
+          _id: newMessage._id,
+          message: newMessage.message,
+          isOwnMessage: false,
+          createdAt: newMessage.createdAt,
+          isRead: newMessage.isRead
+        }
+      };
+
+      // Emit cập nhật recent chat cho người nhận
+      socket.to(data.receiverId.toString()).emit('updateRecentChat', receiverRecentChat);
+
     } catch (error) {
       console.error('Lỗi khi gửi tin nhắn qua socket:', error);
       socket.emit('errorMessage', {
@@ -62,7 +113,7 @@ export const handleMessages = (socket, io, onlineUsers) => {
     }
   });
 
-  // Thêm: đánh dấu tin nhắn đã đọc
+  // Đánh dấu tin nhắn đã đọc
   socket.on('markMessageRead', async (data) => {
     try {
       const { messageId, senderId, receiverId } = data;
@@ -75,14 +126,23 @@ export const handleMessages = (socket, io, onlineUsers) => {
         readBy: receiverId
       });
 
+      // Emit cập nhật trạng thái đã đọc trong recent chats
+      io.to(senderId.toString()).emit('updateMessageRead', {
+        messageId,
+        chatUserId: receiverId
+      });
+
     } catch (error) {
       console.error('Lỗi khi đánh dấu tin nhắn đã đọc:', error);
     }
   });
 
-  // Thêm: lấy trạng thái online của một người dùng
+  // Lấy trạng thái online của một người dùng
   socket.on('checkUserStatus', (userId) => {
     const isOnline = onlineUsers.has(userId);
-    socket.emit('userStatus', { userId, status: isOnline ? 'online' : 'offline' });
+    socket.emit('userStatus', {
+      userId,
+      status: isOnline ? 'online' : 'offline'
+    });
   });
 };

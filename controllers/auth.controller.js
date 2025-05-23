@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
 import { OAuth2Client } from 'google-auth-library';
+import { getIO } from '../middlewares/socket.middleware.js';
 
 export const login = async (req, res) => {
   try {
@@ -28,6 +29,10 @@ export const login = async (req, res) => {
       });
     }
 
+    // Cập nhật lastActive
+    user.lastActive = new Date();
+    await user.save();
+
     // Tạo JWT token
     const token = jwt.sign(
       { id: user._id },
@@ -35,24 +40,34 @@ export const login = async (req, res) => {
       { expiresIn: '30d' }
     );
 
+    // Thêm vào onlineUsers và broadcast status
+    const io = getIO();
+    if (io && io.onlineUsers) {
+      const userSockets = io.onlineUsers.get(user._id.toString()) || new Set();
+      io.onlineUsers.set(user._id.toString(), userSockets);
+
+      io.emit('userStatusChange', {
+        userId: user._id.toString(),
+        status: 'online'
+      });
+    }
+
     // Cài đặt cookie bảo mật
     const cookieOptions = {
-      httpOnly: true,       // Không thể truy cập từ JavaScript FE
+      httpOnly: true,
       secure: true,
       sameSite: 'None',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 ngày
+      maxAge: 30 * 24 * 60 * 60 * 1000,
       path: '/'
     };
 
-    // Set cookie cho trình duyệt
     res.cookie('token', token, cookieOptions);
 
-    // Trả về dữ liệu user và token để dùng cho fallback nếu cookie không hoạt động
     res.status(200).json({
       success: true,
       message: 'Đăng nhập thành công',
       token,
-      cookieSet: true, // Thêm flag để frontend biết server đã cố gắng set cookie
+      cookieSet: true,
       user: {
         id: user._id,
         username: user.username,
@@ -67,7 +82,8 @@ export const login = async (req, res) => {
         isPrivate: user.isPrivate,
         authType: user.authType,
         createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        updatedAt: user.updatedAt,
+        lastActive: user.lastActive
       }
     });
 
@@ -175,6 +191,26 @@ export const register = async (req, res) => {
 
 export const logout = async (req, res) => {
   try {
+    const userId = req.user?.id;
+
+    if (userId) {
+      // Cập nhật lastActive khi logout
+      await User.findByIdAndUpdate(userId, {
+        lastActive: new Date()
+      });
+
+      // Xóa khỏi danh sách online users và broadcast
+      const io = getIO();
+      if (io && io.onlineUsers) {
+        io.onlineUsers.delete(userId.toString());
+
+        io.emit('userStatusChange', {
+          userId: userId.toString(),
+          status: 'offline'
+        });
+      }
+    }
+
     res.clearCookie('token', {
       httpOnly: true,
       secure: true,
