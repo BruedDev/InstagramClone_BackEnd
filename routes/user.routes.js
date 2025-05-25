@@ -5,7 +5,6 @@ import {
   uploadAvatar,
   deleteAvatar,
   updateBio,
-  suggestUsers,
   toggleFollowUser,
   getFollowing,
   getFollowers
@@ -22,7 +21,7 @@ router.delete('/deleteUser/:id', verifyToken, deleteUser);
 router.post('/uploadAvatar', verifyToken, upload.single('file'), uploadAvatar);
 router.delete('/deleteAvatar', verifyToken, deleteAvatar);
 router.put('/updateBio', verifyToken, updateBio);
-router.get('/suggestUsers', verifyToken, suggestUsers);
+
 
 // --- Routes for Follow / Unfollow / Get Lists ---
 // Route này giờ sẽ xử lý cả việc theo dõi và hủy theo dõi

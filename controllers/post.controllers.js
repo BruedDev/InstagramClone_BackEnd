@@ -3,13 +3,18 @@
 import Post from '../models/post.model.js';
 import { uploadImage, uploadVideo } from '../utils/cloudinaryUpload.js';
 import User from '../models/user.model.js';
-// Imports for comment functionality
 import Comment from '../models/comment.model.js';
 import {
   createCommentForPost,
   createCommentForReel,
   createReplyForComment,
 } from '../server/comment.server.js';
+import {
+  generateRandomUser,
+  generateRandomComment,
+  generateNestedComments,
+  generateBuffedMetrics
+} from '../helper/buffAdmin.js';
 
 // Đăng bài viết (ảnh hoặc video)
 export const createPost = async (req, res) => {
@@ -64,79 +69,110 @@ export const createPost = async (req, res) => {
   }
 };
 
-// Lấy bài viết của 1 người dùng với bộ lọc type
 export const getPostUser = async (req, res) => {
   try {
     const { userId } = req.params;
     const { type } = req.query;
 
-    // Kiểm tra nếu userId là một ID hợp lệ, nếu không thì tìm theo username
     let user;
-
-    // Kiểm tra nếu userId là một ID MongoDB hợp lệ (24 ký tự), nếu không tìm bằng username
     if (userId.length === 24) {
       user = await User.findById(userId);
     } else {
       user = await User.findOne({ username: userId });
     }
 
-    // Nếu không tìm thấy người dùng, trả về lỗi
     if (!user) {
-      console.log('User not found:', userId);
-      return res
-        .status(404)
-        .json({ success: false, message: 'Không tìm thấy người dùng' });
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng'
+      });
     }
 
-    // Tạo điều kiện lọc bài viết
-    let filter = { author: user._id }; // Dùng user._id để lọc theo ID người dùng
+    let filter = { author: user._id };
     if (type === 'image') {
       filter.type = 'image';
     } else if (type === 'video') {
       filter.type = 'video';
     }
 
-    // Lấy bài viết với điều kiện lọc
     const posts = await Post.find(filter)
       .sort({ createdAt: -1 })
-      .populate('author', 'username profilePicture fullname') // Đảm bảo lấy thông tin người dùng
+      .populate('author', 'username profilePicture fullname checkMark')
       .lean();
+
+    // Process posts with counts
+    const processedPosts = await Promise.all(posts.map(async post => {
+      // Get comment counts
+      const commentCount = await Comment.countDocuments({
+        post: post._id,
+        parentId: null
+      });
+
+      const replyCount = await Comment.countDocuments({
+        post: post._id,
+        parentId: { $ne: null }
+      });
+
+      // For vanloc19_6's posts
+      if (user.username === 'vanloc19_6') {
+        const buffedLikes = 200000 + Math.floor(Math.random() * 300000);
+        const buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
+        const buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
+        const totalComments = buffedCommentCount + buffedReplyCount;
+
+        return {
+          ...post,
+          likes: buffedLikes,
+          realLikes: post.likes?.length || 0,
+          isBuffed: true,
+          buffedLikes: buffedLikes,
+          commentCount: buffedCommentCount,
+          replyCount: buffedReplyCount,
+          totalComments,
+          totalLikes: buffedLikes,
+          engagement: {
+            likes: buffedLikes,
+            comments: totalComments,
+            total: buffedLikes + totalComments
+          }
+        };
+      }
+
+      // For normal users
+      return {
+        ...post,
+        likes: post.likes?.length || 0,
+        isBuffed: false,
+        commentCount,
+        replyCount,
+        totalComments: commentCount + replyCount,
+        totalLikes: post.likes?.length || 0,
+        engagement: {
+          likes: post.likes?.length || 0,
+          comments: commentCount + replyCount,
+          total: (post.likes?.length || 0) + commentCount + replyCount
+        }
+      };
+    }));
 
     res.status(200).json({
       success: true,
-      posts,
+      posts: processedPosts,
+      isBuffedUser: user.username === 'vanloc19_6'
     });
+
   } catch (error) {
     console.error('Lỗi khi lấy bài viết người dùng:', error);
     res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
   }
 };
 
-// Lấy bài viết theo ID
 export const getPostById = async (req, res) => {
   try {
     const { postId } = req.params;
 
-    // Fetch post with populated comments and author
     const post = await Post.findById(postId)
-      .populate('author', 'username profilePicture')
-      .populate({
-        path: 'comments',
-        populate: [
-          {
-            path: 'author',
-            select: 'username profilePicture fullname'
-          },
-          {
-            path: 'replies',
-            populate: {
-              path: 'author',
-              select: 'username profilePicture fullname'
-            }
-          }
-        ],
-        options: { sort: { createdAt: -1 } }
-      })
+      .populate('author', 'username profilePicture fullname checkMark')
       .lean();
 
     if (!post) {
@@ -146,7 +182,7 @@ export const getPostById = async (req, res) => {
       });
     }
 
-    // Count comments and replies
+    // Get comment counts
     const commentCount = await Comment.countDocuments({
       post: postId,
       parentId: null
@@ -157,30 +193,57 @@ export const getPostById = async (req, res) => {
       parentId: { $ne: null }
     });
 
-    // Add counts to post object
+    // For vanloc19_6's post
+    if (post.author.username === 'vanloc19_6') {
+      const buffedLikes = 200000 + Math.floor(Math.random() * 300000);
+      const buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
+      const buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
+      const totalComments = buffedCommentCount + buffedReplyCount;
+
+      const postWithCounts = {
+        ...post,
+        likes: buffedLikes,
+        realLikes: post.likes?.length || 0,
+        isBuffed: true,
+        buffedLikes: buffedLikes,
+        commentCount: buffedCommentCount,
+        replyCount: buffedReplyCount,
+        totalComments,
+        totalLikes: buffedLikes,
+        engagement: {
+          likes: buffedLikes,
+          comments: totalComments,
+          total: buffedLikes + totalComments
+        }
+      };
+
+      return res.status(200).json({
+        success: true,
+        post: postWithCounts,
+        isBuffedPost: true
+      });
+    }
+
+    // For normal posts
     const postWithCounts = {
       ...post,
+      likes: post.likes?.length || 0,
+      isBuffed: false,
       commentCount,
       replyCount,
-      totalComments: commentCount + replyCount
+      totalComments: commentCount + replyCount,
+      totalLikes: post.likes?.length || 0,
+      engagement: {
+        likes: post.likes?.length || 0,
+        comments: commentCount + replyCount,
+        total: (post.likes?.length || 0) + commentCount + replyCount
+      }
     };
-
-    // Structure comments hierarchically
-    const structuredComments = post.comments
-      .filter(comment => !comment.parentId) // Get root comments only
-      .map(rootComment => ({
-        ...rootComment,
-        replies: post.comments.filter(
-          reply => reply.parentId?.toString() === rootComment._id.toString()
-        )
-      }));
-
-    // Replace flat comments array with structured one
-    postWithCounts.comments = structuredComments;
 
     res.status(200).json({
       success: true,
-      post: postWithCounts
+      post: postWithCounts,
+      isBuffedPost: false
     });
 
   } catch (error) {
@@ -228,38 +291,59 @@ export const deletePostById = async (req, res) => {
   }
 };
 
-// Hàm map itemType
-const mapItemType = (type) => {
-  if (type === 'image' || type === 'post') return 'post';
-  if (type === 'video') return 'video';
-  if (type === 'reel') return 'reel';
-  return null;
-};
-
 // Controller để thêm comment vào post hoặc reel (hoặc video nếu có xử lý)
 export const addComment = async (req, res) => {
   try {
     const authorId = req.user.id;
-    const { itemId, itemType, text, parentId } = req.body; // itemId là ID của post hoặc reel hoặc video
+    const { itemId, itemType, text, parentId } = req.body;
 
     if (!itemId || !itemType || !text) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Thiếu thông tin cần thiết.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Thiếu thông tin cần thiết.'
+      });
     }
 
-    const mappedType = mapItemType(itemType);
+    const mappedType = itemType === 'post' ? 'post' :
+      itemType === 'reel' ? 'reels' :
+        itemType === 'video' ? 'video' : 'post';
 
-    if (!mappedType || (mappedType !== 'post' && mappedType !== 'reel' && mappedType !== 'video')) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Loại item không hợp lệ.' });
+    // Check if this is a reply to a buffed comment
+    if (parentId && parentId.startsWith('buff_comment_')) {
+      // Create a buffed-style reply
+      const replyUser = await User.findById(authorId).select('username profilePicture fullname').lean();
+      const now = new Date();
+
+      const buffedReply = {
+        _id: `buff_reply_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        text,
+        author: {
+          _id: replyUser._id,
+          username: replyUser.username,
+          profilePicture: replyUser.profilePicture,
+          fullname: replyUser.fullname,
+          isReal: true // Flag to indicate this is a real user
+        },
+        createdAt: now,
+        likes: Math.floor(Math.random() * 1000), // Random likes for consistency
+        likeCount: Math.floor(Math.random() * 1000),
+        parentId,
+        isBuffedReply: true,
+        replies: []
+      };
+
+      // Return the buffed-style reply
+      return res.status(201).json({
+        success: true,
+        message: 'Bình luận đã được thêm thành công',
+        comment: buffedReply
+      });
     }
 
+    // Normal comment processing for non-buffed comments
     let savedComment;
 
-    if (parentId) {
-      // Đây là một reply
+    if (parentId && !parentId.startsWith('buff_comment_')) {
       savedComment = await createReplyForComment(
         authorId,
         parentId,
@@ -268,13 +352,11 @@ export const addComment = async (req, res) => {
         mappedType
       );
     } else {
-      // Đây là một comment gốc
       if (mappedType === 'post') {
         savedComment = await createCommentForPost(authorId, itemId, text);
       } else if (mappedType === 'reel') {
         savedComment = await createCommentForReel(authorId, itemId, text);
       } else if (mappedType === 'video') {
-        // Nếu bạn có hàm xử lý comment cho video thì gọi ở đây, ví dụ:
         savedComment = await createCommentForVideo(authorId, itemId, text);
       }
     }
@@ -283,20 +365,23 @@ export const addComment = async (req, res) => {
       throw new Error('Không thể lưu bình luận');
     }
 
-    // Populate author thông tin để trả về client
     const populatedComment = await Comment.findById(savedComment._id)
-      .populate('author', 'username profilePicture')
+      .populate('author', 'username profilePicture fullname')
       .lean();
 
     res.status(201).json({
       success: true,
       message: 'Bình luận đã được thêm thành công',
-      comment: populatedComment,
+      comment: populatedComment
     });
+
   } catch (error) {
     console.error('Lỗi khi thêm bình luận:', error);
     if (!res.headersSent) {
-      res.status(500).json({ success: false, message: error.message || 'Lỗi máy chủ khi thêm bình luận' });
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Lỗi máy chủ khi thêm bình luận'
+      });
     }
   }
 };
@@ -305,61 +390,231 @@ export const addComment = async (req, res) => {
 export const getCommentsForItem = async (req, res) => {
   try {
     const { itemId, itemType } = req.params;
+    const limit = parseInt(req.query.limit) || 10;
+    const loggedInUserId = req.user?.id;
 
     if (!itemId || !itemType) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Thiếu thông tin item ID hoặc type.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Thiếu thông tin item ID hoặc type.'
+      });
     }
 
-    const mappedType = mapItemType(itemType);
+    const mappedType = itemType === 'post' ? 'post' :
+      itemType === 'reel' ? 'reels' :
+        itemType === 'video' ? 'video' : 'post';
 
-    if (!mappedType || (mappedType !== 'post' && mappedType !== 'reel' && mappedType !== 'video')) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Loại item không hợp lệ.' });
-    }
-
-    let queryCondition = {};
+    let isBuffedItem = false;
     if (mappedType === 'post') {
-      queryCondition.post = itemId;
-    } else if (mappedType === 'reel') {
-      queryCondition.reels = itemId;
-    } else if (mappedType === 'video') {
-      queryCondition.video = itemId; // Cần có field video trong schema Comment nếu dùng
+      const post = await Post.findById(itemId)
+        .populate('author', 'username')
+        .lean();
+      isBuffedItem = post?.author?.username === 'vanloc19_6';
     }
 
-    const allCommentsForItem = await Comment.find(queryCondition)
-      .populate('author', 'username profilePicture fullname')
-      .sort({ createdAt: 'asc' })
-      .lean();
+    let comments = [];
+    let metrics = {
+      totalComments: 0,
+      totalLikes: 0,
+      hasMore: false
+    };
 
-    // Cấu trúc comments và replies
-    const commentMap = {};
-    const topLevelComments = [];
+    if (isBuffedItem) {
+      // Generate buffed comments
+      const userPool = Array.from({ length: 100 }, (_, i) => generateRandomUser(i));
+      const mainCommentsCount = Math.floor(Math.random() * 200) + 300;
+      const buffedMetrics = generateBuffedMetrics();
 
-    allCommentsForItem.forEach(comment => {
-      comment.replies = [];
-      commentMap[comment._id.toString()] = comment;
+      const randomComments = Array.from({ length: mainCommentsCount }, (_, index) => {
+        const comment = generateRandomComment(itemId, index, userPool);
+        comment.replies = generateNestedComments(itemId, comment, 0, userPool);
+        return comment;
+      });
 
-      if (comment.parentId) {
-        const parentComment = commentMap[comment.parentId.toString()];
-        if (parentComment) {
-          parentComment.replies.push(comment);
-        } else {
-          console.warn(`Orphan reply found: ${comment._id} for parent ${comment.parentId}`);
+      let totalLikes = 0;
+      let totalReplies = 0;
+
+      // Get real comments too
+      const realComments = await Comment.find({ [mappedType]: itemId })
+        .populate('author', 'username profilePicture fullname isVerified')
+        .lean();
+
+      // Process buffed comments
+      randomComments.forEach(comment => {
+        totalLikes += comment.likes;
+        totalReplies += countNestedReplies(comment.replies);
+
+        if (comment.replies.length > 0) {
+          sortRepliesRecursively(comment.replies);
         }
+      });
+
+      // Process real comments
+      const processedRealComments = realComments.map(comment => ({
+        ...comment,
+        isReal: true,
+        likeCount: comment.likes?.length || 0
+      }));
+
+      // Combine and sort comments
+      let allComments = [...processedRealComments, ...randomComments];
+
+      // Prioritize logged in user's comments
+      if (loggedInUserId) {
+        const userComments = allComments.filter(
+          comment => comment.isReal && comment.author?._id.toString() === loggedInUserId
+        );
+
+        const otherComments = allComments.filter(
+          comment => !comment.isReal || comment.author?._id.toString() !== loggedInUserId
+        );
+
+        // Sort other comments by engagement
+        otherComments.sort((a, b) => {
+          const aEngagement = a.likes + (a.replies?.length || 0);
+          const bEngagement = b.likes + (b.replies?.length || 0);
+          return bEngagement - aEngagement;
+        });
+
+        comments = [
+          ...userComments,
+          ...otherComments.slice(0, limit - userComments.length)
+        ];
       } else {
-        topLevelComments.push(comment);
+        // Sort by engagement if no logged-in user
+        allComments.sort((a, b) => {
+          const aEngagement = a.likes + (a.replies?.length || 0);
+          const bEngagement = b.likes + (b.replies?.length || 0);
+          return bEngagement - aEngagement;
+        });
+        comments = allComments.slice(0, limit);
       }
-    });
+
+      metrics = {
+        totalComments: mainCommentsCount + realComments.length,
+        totalReplies: totalReplies,
+        totalLikes: totalLikes,
+        buffedComments: buffedMetrics.comments,
+        buffedReplies: buffedMetrics.replies,
+        hasMore: allComments.length > limit
+      };
+
+    } else {
+      // Get all comments for non-buffed items
+      const allComments = await Comment.find({ [mappedType]: itemId })
+        .populate('author', 'username profilePicture fullname isVerified')
+        .lean();
+
+      // Separate top-level comments and replies
+      const commentMap = new Map();
+      const topLevelComments = [];
+      let totalLikes = 0;
+
+      // First pass: Create map of all comments and identify top-level comments
+      allComments.forEach(comment => {
+        comment.likeCount = comment.likes?.length || 0;
+        totalLikes += comment.likeCount;
+        comment.replies = [];
+        commentMap.set(comment._id.toString(), comment);
+
+        if (!comment.parentId) {
+          topLevelComments.push(comment);
+        }
+      });
+
+      // Second pass: Attach replies to their parent comments
+      allComments.forEach(comment => {
+        if (comment.parentId) {
+          const parentComment = commentMap.get(comment.parentId.toString());
+          if (parentComment) {
+            parentComment.replies.push(comment);
+          }
+        }
+      });
+
+      // Sort replies by likes within each comment
+      topLevelComments.forEach(comment => {
+        if (comment.replies.length > 0) {
+          comment.replies.sort((a, b) => b.likeCount - a.likeCount);
+        }
+      });
+
+      // Prioritize user's comments
+      let userComments = [];
+      let otherComments = [];
+
+      if (loggedInUserId) {
+        userComments = topLevelComments.filter(
+          comment => comment.author?._id.toString() === loggedInUserId
+        );
+        otherComments = topLevelComments.filter(
+          comment => comment.author?._id.toString() !== loggedInUserId
+        );
+      } else {
+        otherComments = topLevelComments;
+      }
+
+      // Sort other comments by creation date
+      otherComments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      // Combine with user comments always first
+      comments = [
+        ...userComments,
+        ...otherComments.slice(0, limit - userComments.length)
+      ];
+
+      // Calculate total replies
+      const totalReplies = allComments.filter(comment => comment.parentId).length;
+
+      metrics = {
+        totalComments: topLevelComments.length,
+        totalReplies: totalReplies,
+        totalLikes: totalLikes,
+        hasMore: topLevelComments.length > limit
+      };
+    }
+
+    // Add ownership flags
+    const commentsWithOwnership = comments.map(comment => ({
+      ...comment,
+      isOwnComment: comment.author?._id.toString() === loggedInUserId,
+      replies: comment.replies?.map(reply => ({
+        ...reply,
+        isOwnComment: reply.author?._id.toString() === loggedInUserId
+      }))
+    }));
 
     res.status(200).json({
       success: true,
-      comments: topLevelComments,
+      comments: commentsWithOwnership,
+      metrics,
+      isBuffedComments: isBuffedItem,
+      currentLimit: limit,
+      hasUserComments: commentsWithOwnership.some(c => c.isOwnComment)
     });
+
   } catch (error) {
     console.error('Lỗi khi lấy bình luận:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi máy chủ khi lấy bình luận'
+    });
   }
+};
+
+// Helper functions
+const countNestedReplies = (replies) => {
+  if (!replies || replies.length === 0) return 0;
+  return replies.length + replies.reduce((acc, reply) =>
+    acc + countNestedReplies(reply.replies), 0
+  );
+};
+
+const sortRepliesRecursively = (replies) => {
+  replies.sort((a, b) => b.likes - a.likes);
+  replies.forEach(reply => {
+    if (reply.replies && reply.replies.length > 0) {
+      sortRepliesRecursively(reply.replies);
+    }
+  });
 };

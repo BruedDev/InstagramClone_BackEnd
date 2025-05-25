@@ -87,6 +87,17 @@ const UserSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  archivedStories: [{
+    storyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Story'
+    },
+    media: String,
+    mediaType: String,
+    caption: String,
+    createdAt: Date,
+    viewCount: Number
+  }],
 }, { timestamps: true });
 
 UserSchema.pre('save', async function (next) {

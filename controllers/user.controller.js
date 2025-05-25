@@ -64,12 +64,14 @@ export const getUser = async (req, res) => {
     if (isValidObjectId) {
       user = await User.findById(identifier)
         .select('-password')
+        .populate('archivedStories', 'media mediaType caption createdAt viewCount')
         .lean();
     }
 
     if (!user) {
       user = await User.findOne({ username: identifier })
         .select('-password')
+        .populate('archivedStories', 'media mediaType caption createdAt viewCount')
         .lean();
     }
 
@@ -102,6 +104,13 @@ export const getUser = async (req, res) => {
 
     // Thêm các thông tin bổ sung
     user.followingCount = user.following.length;
+
+    // Xử lý archivedStories
+    user.archivedStories = user.archivedStories || [];
+    user.archivedStoriesCount = user.archivedStories.length;
+
+    // Sắp xếp archived stories theo thời gian mới nhất
+    user.archivedStories.sort((a, b) => b.createdAt - a.createdAt);
 
     res.status(200).json({
       success: true,
@@ -222,62 +231,6 @@ export const updateBio = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Dữ liệu không hợp lệ', errors: error.errors });
     }
     res.status(500).json({ success: false, message: 'Lỗi máy chủ khi cập nhật bio' });
-  }
-};
-
-export const suggestUsers = async (req, res) => {
-  try {
-    const myId = req.user.id;
-    const limit = parseInt(req.query.limit) || 10;
-
-    const currentUser = await User.findById(myId).select('following').lean();
-    const followingIds = currentUser ? currentUser.following.map(id => id.toString()) : [];
-
-    let users = await User.find({
-      _id: { $ne: myId, $nin: followingIds }
-    })
-      .select('-password -email -phoneNumber -followers -following -posts')
-      .limit(limit)
-      .lean();
-
-    users = users.map(u => {
-      // Buff cho vanloc19_6
-      if (u.username === 'vanloc19_6') {
-        return {
-          ...u,
-          checkMark: true,
-          followersCount: 1000000,
-          isBuffed: true
-        };
-      }
-      return {
-        ...u,
-        checkMark: !!u.checkMark,
-        followersCount: 0, // Không hiển thị số followers thật cho suggestion
-        isBuffed: false
-      };
-    });
-
-    users.sort((a, b) => {
-      // vanloc19_6 luôn ở đầu
-      if (a.username === 'vanloc19_6') return -1;
-      if (b.username === 'vanloc19_6') return 1;
-
-      // Sau đó sắp xếp theo checkMark và username
-      if (b.checkMark && !a.checkMark) return 1;
-      if (!b.checkMark && a.checkMark) return -1;
-      if (a.username < b.username) return -1;
-      if (a.username > b.username) return 1;
-      return 0;
-    });
-
-    res.status(200).json({
-      success: true,
-      users,
-    });
-  } catch (error) {
-    console.error('Lỗi khi gợi ý người dùng:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ khi gợi ý người dùng' });
   }
 };
 
