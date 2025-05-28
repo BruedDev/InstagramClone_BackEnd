@@ -6,7 +6,8 @@ import {
   getUnreadCount,
   checkUserStatus,
   getRecentChats,
-  markMessagesAsRead
+  markMessagesAsRead,
+  getMessagesWithPagination
 } from '../controllers/messenger.controller.js';
 import { verifyToken } from '../middlewares/auth.middleware.js';
 
@@ -17,6 +18,7 @@ router.post('/sendMessage', verifyToken, sendMessage);
 
 // Lấy tin nhắn giữa 2 người dùng
 router.get('/messages/:userId', verifyToken, getMessages);
+router.get('/getMessagesWithPagination/:userId', verifyToken, getMessagesWithPagination);
 
 // Lấy danh sách người dùng để nhắn tin
 router.get('/users', verifyToken, getUserMessages);

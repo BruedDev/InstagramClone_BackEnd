@@ -172,8 +172,10 @@ export const getStoriesByUser = async (req, res) => {
       .populate('author', 'username profilePicture checkMark')
       .sort({ createdAt: -1 })
       .lean();
+    const hasStory = stories.length > 0;
     res.status(200).json({
       success: true,
+      hasStory, // trả về true/false
       stories: stories.map(story => ({
         ...story,
         hasAudio: !!story.audio,
