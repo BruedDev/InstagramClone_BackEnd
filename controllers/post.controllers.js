@@ -41,7 +41,7 @@ export const createPost = async (req, res) => {
     if (type === 'image') {
       result = await uploadImage(req.file.path, 'posts');
     } else if (type === 'video') {
-      result = await uploadVideo(req.file.path, 'posts');
+      result = await uploadVideo(req.file.path, 'reels');
     }
 
     const newPost = new Post({
@@ -55,8 +55,10 @@ export const createPost = async (req, res) => {
 
     await newPost.save();
 
-    // Thêm ID bài viết vào mảng posts của user
-    await User.findByIdAndUpdate(authorId, { $push: { posts: newPost._id } });
+    // Chỉ thêm vào mảng posts nếu là ảnh
+    if (type === 'image') {
+      await User.findByIdAndUpdate(authorId, { $push: { posts: newPost._id } });
+    }
 
     res.status(201).json({
       success: true,
@@ -68,6 +70,7 @@ export const createPost = async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
   }
 };
+
 
 export const getPostUser = async (req, res) => {
   try {
@@ -308,10 +311,20 @@ export const addComment = async (req, res) => {
       itemType === 'reel' ? 'reels' :
         itemType === 'video' ? 'video' : 'post';
 
-    // Check if this is a reply to a buffed comment
-    if (parentId && parentId.startsWith('buff_comment_')) {
-      // Create a buffed-style reply
-      const replyUser = await User.findById(authorId).select('username profilePicture fullname').lean();
+    // Check if this is a post by vanloc19_6
+    let isBuffedPost = false;
+    if (mappedType === 'post') {
+      const post = await Post.findById(itemId)
+        .populate('author', 'username')
+        .lean();
+      isBuffedPost = post?.author?.username === 'vanloc19_6';
+    }
+
+    // If it's a reply to a buffed comment on vanloc19_6's post
+    if (isBuffedPost && (parentId?.startsWith('buff_comment_') || parentId?.startsWith('buff_reply_'))) {
+      const replyUser = await User.findById(authorId)
+        .select('username profilePicture fullname isVerified')
+        .lean();
       const now = new Date();
 
       const buffedReply = {
@@ -322,17 +335,18 @@ export const addComment = async (req, res) => {
           username: replyUser.username,
           profilePicture: replyUser.profilePicture,
           fullname: replyUser.fullname,
-          isReal: true // Flag to indicate this is a real user
+          isVerified: replyUser.isVerified,
+          isReal: true
         },
         createdAt: now,
-        likes: Math.floor(Math.random() * 1000), // Random likes for consistency
+        likes: Math.floor(Math.random() * 1000),
         likeCount: Math.floor(Math.random() * 1000),
         parentId,
         isBuffedReply: true,
+        isReal: true,
         replies: []
       };
 
-      // Return the buffed-style reply
       return res.status(201).json({
         success: true,
         message: 'Bình luận đã được thêm thành công',
@@ -366,7 +380,7 @@ export const addComment = async (req, res) => {
     }
 
     const populatedComment = await Comment.findById(savedComment._id)
-      .populate('author', 'username profilePicture fullname')
+      .populate('author', 'username profilePicture fullname isVerified')
       .lean();
 
     res.status(201).json({
@@ -404,6 +418,10 @@ export const getCommentsForItem = async (req, res) => {
       itemType === 'reel' ? 'reels' :
         itemType === 'video' ? 'video' : 'post';
 
+    // Get all real users from MongoDB for prioritization
+    const allUsers = await User.find({}).select('_id').lean();
+    const realUserIds = new Set(allUsers.map(user => user._id.toString()));
+
     let isBuffedItem = false;
     if (mappedType === 'post') {
       const post = await Post.findById(itemId)
@@ -434,10 +452,34 @@ export const getCommentsForItem = async (req, res) => {
       let totalLikes = 0;
       let totalReplies = 0;
 
-      // Get real comments too
+      // Get real comments from MongoDB
       const realComments = await Comment.find({ [mappedType]: itemId })
         .populate('author', 'username profilePicture fullname isVerified')
         .lean();
+
+      // === FIX: Build replies for real comments ===
+      const realCommentMap = new Map();
+      realComments.forEach(c => {
+        c.likeCount = c.likes?.length || 0;
+        c.replies = [];
+        realCommentMap.set(c._id.toString(), c);
+      });
+      realComments.forEach(c => {
+        if (c.parentId) {
+          const parent = realCommentMap.get(c.parentId?.toString());
+          if (parent) {
+            parent.replies.push(c);
+          }
+        }
+      });
+      // Only top-level real comments (không có parentId)
+      const processedRealComments = realComments
+        .filter(c => !c.parentId)
+        .map(comment => ({
+          ...comment,
+          isReal: true,
+          likeCount: comment.likes?.length || 0
+        }));
 
       // Process buffed comments
       randomComments.forEach(comment => {
@@ -449,50 +491,44 @@ export const getCommentsForItem = async (req, res) => {
         }
       });
 
-      // Process real comments
-      const processedRealComments = realComments.map(comment => ({
-        ...comment,
-        isReal: true,
-        likeCount: comment.likes?.length || 0
-      }));
+      // Split comments into three groups: logged-in user, real users, and buffed
+      let loggedInUserComments = [];
+      let realUserComments = [];
+      let buffedUserComments = [];
 
-      // Combine and sort comments
-      let allComments = [...processedRealComments, ...randomComments];
+      [...processedRealComments, ...randomComments].forEach(comment => {
+        if (comment.isReal && comment.author?._id.toString() === loggedInUserId) {
+          loggedInUserComments.push(comment);
+        } else if (comment.isReal && realUserIds.has(comment.author?._id.toString())) {
+          realUserComments.push(comment);
+        } else {
+          buffedUserComments.push(comment);
+        }
+      });
 
-      // Prioritize logged in user's comments
-      if (loggedInUserId) {
-        const userComments = allComments.filter(
-          comment => comment.isReal && comment.author?._id.toString() === loggedInUserId
-        );
+      // Sort each group by engagement
+      const sortByEngagement = (a, b) => {
+        const aEngagement = (a.likes || a.likeCount || 0) + (a.replies?.length || 0);
+        const bEngagement = (b.likes || b.likeCount || 0) + (b.replies?.length || 0);
+        return bEngagement - aEngagement;
+      };
 
-        const otherComments = allComments.filter(
-          comment => !comment.isReal || comment.author?._id.toString() !== loggedInUserId
-        );
+      loggedInUserComments.sort(sortByEngagement);
+      realUserComments.sort(sortByEngagement);
+      buffedUserComments.sort(sortByEngagement);
 
-        // Sort other comments by engagement
-        otherComments.sort((a, b) => {
-          const aEngagement = a.likes + (a.replies?.length || 0);
-          const bEngagement = b.likes + (b.replies?.length || 0);
-          return bEngagement - aEngagement;
-        });
+      // Combine all comments maintaining priority order
+      const allComments = [
+        ...loggedInUserComments,
+        ...realUserComments,
+        ...buffedUserComments
+      ];
 
-        comments = [
-          ...userComments,
-          ...otherComments.slice(0, limit - userComments.length)
-        ];
-      } else {
-        // Sort by engagement if no logged-in user
-        allComments.sort((a, b) => {
-          const aEngagement = a.likes + (a.replies?.length || 0);
-          const bEngagement = b.likes + (b.replies?.length || 0);
-          return bEngagement - aEngagement;
-        });
-        comments = allComments.slice(0, limit);
-      }
+      comments = allComments.slice(0, limit);
 
       metrics = {
-        totalComments: mainCommentsCount + realComments.length,
-        totalReplies: totalReplies,
+        totalComments: mainCommentsCount + processedRealComments.length,
+        totalReplies: totalReplies + realComments.filter(c => c.parentId).length,
         totalLikes: totalLikes,
         buffedComments: buffedMetrics.comments,
         buffedReplies: buffedMetrics.replies,
@@ -539,29 +575,33 @@ export const getCommentsForItem = async (req, res) => {
         }
       });
 
-      // Prioritize user's comments
-      let userComments = [];
+      // Split comments into three groups
+      let loggedInUserComments = [];
+      let realUserComments = [];
       let otherComments = [];
 
-      if (loggedInUserId) {
-        userComments = topLevelComments.filter(
-          comment => comment.author?._id.toString() === loggedInUserId
-        );
-        otherComments = topLevelComments.filter(
-          comment => comment.author?._id.toString() !== loggedInUserId
-        );
-      } else {
-        otherComments = topLevelComments;
-      }
+      topLevelComments.forEach(comment => {
+        if (comment.author?._id.toString() === loggedInUserId) {
+          loggedInUserComments.push(comment);
+        } else if (realUserIds.has(comment.author?._id.toString())) {
+          realUserComments.push(comment);
+        } else {
+          otherComments.push(comment);
+        }
+      });
 
-      // Sort other comments by creation date
-      otherComments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      // Sort each group by creation date
+      const sortByDate = (a, b) => new Date(b.createdAt) - new Date(a.createdAt);
+      loggedInUserComments.sort(sortByDate);
+      realUserComments.sort(sortByDate);
+      otherComments.sort(sortByDate);
 
-      // Combine with user comments always first
+      // Combine with priority order
       comments = [
-        ...userComments,
-        ...otherComments.slice(0, limit - userComments.length)
-      ];
+        ...loggedInUserComments,
+        ...realUserComments,
+        ...otherComments
+      ].slice(0, limit);
 
       // Calculate total replies
       const totalReplies = allComments.filter(comment => comment.parentId).length;
