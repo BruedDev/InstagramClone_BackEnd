@@ -1,20 +1,37 @@
-// app.js
-const express = require('express');
-const app = express();
+import express from 'express';
+import dotenv from 'dotenv';
+import http from 'http';
+import applyMiddlewares from './middlewares/cors.middleware.js';
+import connectDB from './config/db.config.js';
+import routes from './routes/index.routes.js';
+import { initSocket } from './middlewares/socket.middleware.js';
 
-// Cấu hình port (mặc định 5000)
+dotenv.config();
+
+const app = express();
+const server = http.createServer(app);
+
+// Khởi tạo Socket.IO
+initSocket(server);
+
+// Kết nối database
+connectDB();
+
+// Áp dụng middleware
+applyMiddlewares(app);
+
+// Áp dụng routes
+app.use(routes);
+
+// Route test
+app.get('/', (req, res) => {
+  res.send('API Instagram Clone đang hoạt động');
+});
+
 const PORT = process.env.PORT || 5000;
 
-// Middleware cơ bản (tùy chọn)
-app.use(express.json()); // parse body JSON
-app.use(express.urlencoded({ extended: true })); // parse body form
-
-// Route mặc định
-app.get('/', (req, res) => {
-  res.send('Hello from Express!');
+server.listen(PORT, () => {
+  console.log(`🚀 Server đang chạy trên cổng ${PORT}`);
 });
 
-// Khởi động server
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-});
+export default app;
