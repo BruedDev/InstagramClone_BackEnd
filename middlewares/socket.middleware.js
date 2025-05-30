@@ -131,6 +131,11 @@ export const initSocket = (server) => {
 
         if (savedComment) {
           const roomName = `${itemType}_${itemId}`;
+          // Lấy lại tổng số comment + reply sau khi thêm mới
+          const Comment = (await import('../models/comment.model.js')).default;
+          const commentCount = await Comment.countDocuments({ [itemType]: itemId, parentId: null });
+          const replyCount = await Comment.countDocuments({ [itemType]: itemId, parentId: { $ne: null } });
+          const totalComments = commentCount + replyCount;
           io.in(roomName).emit('comment:created', {
             itemId,
             itemType,
@@ -142,6 +147,7 @@ export const initSocket = (server) => {
               updatedAt: savedComment.updatedAt,
               parentId: savedComment.parentId || null,
             },
+            totalComments
           });
           // ĐÃ ĐẢM BẢO emitCommentsListForItem được gọi trong comment.server.js
           // Không cần gọi lại ở đây để tránh double emit

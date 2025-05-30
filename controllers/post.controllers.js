@@ -213,29 +213,46 @@ export const getPostById = async (req, res) => {
 
     // For vanloc19_6's post
     if (post.author.username === 'vanloc19_6') {
-      const buffedLikes = 200000 + Math.floor(Math.random() * 300000);
-      const buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
-      const buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
-      const totalComments = buffedCommentCount + buffedReplyCount;
-
+      // Nếu chưa có buffedLikes thì random 1 lần và lưu vào DB
+      let buffedLikes = post.buffedLikes;
+      if (typeof buffedLikes !== 'number') {
+        buffedLikes = 200000 + Math.floor(Math.random() * 300000);
+        await Post.findByIdAndUpdate(post._id, { buffedLikes });
+      }
+      // Nếu chưa có buffedCommentCount và buffedReplyCount thì random 1 lần và lưu vào DB
+      let buffedCommentCount = post.buffedCommentCount;
+      let buffedReplyCount = post.buffedReplyCount;
+      let updateObj = {};
+      if (typeof buffedCommentCount !== 'number') {
+        buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
+        updateObj.buffedCommentCount = buffedCommentCount;
+      }
+      if (typeof buffedReplyCount !== 'number') {
+        buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
+        updateObj.buffedReplyCount = buffedReplyCount;
+      }
+      if (Object.keys(updateObj).length > 0) {
+        await Post.findByIdAndUpdate(post._id, updateObj);
+      }
+      const totalLikes = (buffedLikes || 0) + (post.likes?.length || 0);
+      const totalComments = (buffedCommentCount || 0) + (buffedReplyCount || 0);
       const postWithCounts = {
         ...post,
-        likes: buffedLikes,
+        likes: totalLikes,
         realLikes: post.likes?.length || 0,
         isBuffed: true,
         buffedLikes: buffedLikes,
         commentCount: buffedCommentCount,
         replyCount: buffedReplyCount,
         totalComments,
-        totalLikes: buffedLikes,
+        totalLikes: totalLikes,
         engagement: {
-          likes: buffedLikes,
+          likes: totalLikes,
           comments: totalComments,
-          total: buffedLikes + totalComments
+          total: totalLikes + totalComments
         },
         isLike: false // buffed user không cho like thật
       };
-
       return res.status(200).json({
         success: true,
         post: postWithCounts,
@@ -673,7 +690,8 @@ export const likePost = async (req, res) => {
   try {
     const userId = req.user.id;
     const { postId } = req.params;
-    const post = await Post.findById(postId);
+    // Populate author để lấy username
+    const post = await Post.findById(postId).populate('author', 'username');
     if (!post) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy bài viết' });
     }
@@ -688,8 +706,17 @@ export const likePost = async (req, res) => {
       isLike = true;
     }
     await post.save();
-    // Đảm bảo trả về totalLikes mới nhất
-    const totalLikes = post.likes.length;
+
+    // Tính totalLikes: nếu là vanloc19_6 thì cộng buffedLikes, ngược lại là số like thật
+    let totalLikes = post.likes.length;
+    if (post.author && post.author.username === 'vanloc19_6') {
+      let buffedLikes = post.buffedLikes;
+      if (typeof buffedLikes !== 'number') {
+        buffedLikes = 200000 + Math.floor(Math.random() * 300000);
+        await Post.findByIdAndUpdate(post._id, { buffedLikes });
+      }
+      totalLikes = (buffedLikes || 0) + post.likes.length;
+    }
     res.status(200).json({ success: true, isLike, totalLikes });
   } catch (error) {
     console.error('Lỗi khi like/unlike bài viết:', error);
@@ -712,4 +739,91 @@ const sortRepliesRecursively = (replies) => {
       sortRepliesRecursively(reply.replies);
     }
   });
+};
+
+export const getPostHome = async (req, res) => {
+  try {
+    let posts = await Post.find()
+      .populate('author', 'username profilePicture fullName checkMark')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const loggedInUserId = req.user?.id;
+    // Process posts with buffed data for vanloc19_6
+    const processedPosts = await Promise.all(posts.map(async post => {
+      const likesArr = Array.isArray(post.likes) ? post.likes.map(id => id?.toString()) : [];
+      let isLike = false;
+      if (loggedInUserId && likesArr.length > 0) {
+        isLike = likesArr.includes(loggedInUserId.toString());
+      }
+      if (post.author.username === 'vanloc19_6') {
+        // Nếu chưa có buffedLikes thì random 1 lần và lưu vào DB
+        let buffedLikes = post.buffedLikes;
+        if (typeof buffedLikes !== 'number') {
+          buffedLikes = 200000 + Math.floor(Math.random() * 300000);
+          await Post.findByIdAndUpdate(post._id, { buffedLikes });
+        }
+        // Nếu chưa có buffedCommentCount và buffedReplyCount thì random 1 lần và lưu vào DB
+        let buffedCommentCount = post.buffedCommentCount;
+        let buffedReplyCount = post.buffedReplyCount;
+        let updateObj = {};
+        if (typeof buffedCommentCount !== 'number') {
+          buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
+          updateObj.buffedCommentCount = buffedCommentCount;
+        }
+        if (typeof buffedReplyCount !== 'number') {
+          buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
+          updateObj.buffedReplyCount = buffedReplyCount;
+        }
+        if (Object.keys(updateObj).length > 0) {
+          await Post.findByIdAndUpdate(post._id, updateObj);
+        }
+        const totalLikes = (buffedLikes || 0) + likesArr.length;
+        const totalComments = (buffedCommentCount || 0) + (buffedReplyCount || 0);
+        return {
+          ...post,
+          likes: totalLikes,
+          realLikes: likesArr.length,
+          isBuffed: true,
+          buffedLikes: buffedLikes,
+          commentCount: buffedCommentCount,
+          replyCount: buffedReplyCount,
+          totalComments: totalComments,
+          totalLikes: totalLikes,
+          engagement: {
+            likes: totalLikes,
+            comments: totalComments,
+            total: totalLikes + totalComments
+          },
+          isLike: isLike
+        };
+      }
+      // For normal users
+      return {
+        ...post,
+        likes: likesArr.length,
+        isBuffed: false,
+        commentCount,
+        replyCount,
+        totalComments: commentCount + replyCount,
+        totalLikes: likesArr.length,
+        engagement: {
+          likes: likesArr.length,
+          comments: commentCount + replyCount,
+          total: likesArr.length + commentCount + replyCount
+        },
+        isLike: !!isLike
+      };
+    }));
+
+    res.status(200).json({
+      success: true,
+      posts: processedPosts,
+      isBuffedUser: user.username === 'vanloc19_6'
+    });
+
+  } catch (error) {
+    console.error('Lỗi khi lấy bài viết người dùng:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
 };
