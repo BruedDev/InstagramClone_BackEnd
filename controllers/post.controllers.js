@@ -327,7 +327,7 @@ export const addComment = async (req, res) => {
       });
     }
 
-    const mappedType = itemType === 'post' ? 'post' :
+    const mappedType = (itemType === 'post' || itemType === 'image') ? 'post' :
       itemType === 'reel' ? 'reels' :
         itemType === 'video' ? 'video' : 'post';
 
@@ -374,10 +374,11 @@ export const addComment = async (req, res) => {
       });
     }
 
-    // Normal comment processing for non-buffed comments
+    // Normal comment processing
     let savedComment;
 
     if (parentId && !parentId.startsWith('buff_comment_')) {
+      // Đây là reply comment - truyền parentId
       savedComment = await createReplyForComment(
         authorId,
         parentId,
@@ -386,6 +387,7 @@ export const addComment = async (req, res) => {
         mappedType
       );
     } else {
+      // Đây là comment gốc
       if (mappedType === 'post') {
         savedComment = await createCommentForPost(authorId, itemId, text);
       } else if (mappedType === 'reel') {

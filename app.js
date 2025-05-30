@@ -20,6 +20,15 @@ connectDB();
 // Áp dụng middleware
 applyMiddlewares(app);
 
+// Chỉ parse JSON cho các method có body
+app.use((req, res, next) => {
+  if (["POST", "PUT", "PATCH"].includes(req.method)) {
+    express.json()(req, res, next);
+  } else {
+    next();
+  }
+});
+
 // Áp dụng routes
 app.use(routes);
 

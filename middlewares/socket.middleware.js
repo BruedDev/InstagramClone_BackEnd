@@ -94,7 +94,7 @@ export const initSocket = (server) => {
     // Xử lý xóa comment
     socket.on('comment:delete', async ({ commentId, itemId, itemType }) => {
       const roomName = `${itemType}_${itemId}`;
-      socket.to(roomName).emit('comment:deleted', {
+      io.in(roomName).emit('comment:deleted', {
         commentId,
         itemId
       });
@@ -105,7 +105,7 @@ export const initSocket = (server) => {
     // Xử lý edit comment
     socket.on('comment:edit', async ({ commentId, newText, itemId, itemType }) => {
       const roomName = `${itemType}_${itemId}`;
-      socket.to(roomName).emit('comment:edited', {
+      io.in(roomName).emit('comment:edited', {
         commentId,
         newText,
         itemId
@@ -115,11 +115,15 @@ export const initSocket = (server) => {
     });
 
     // Thêm xử lý tạo comment mới
-    socket.on('comment:create', async ({ authorId, itemId, itemType, text }) => {
+    socket.on('comment:create', async ({ authorId, itemId, itemType, text, parentId }) => {
       try {
         let savedComment;
 
-        if (itemType === 'post') {
+        if (parentId) {
+          // Nếu có parentId, gọi hàm tạo reply
+          const { createReplyForComment } = await import('../server/comment.server.js');
+          savedComment = await createReplyForComment(authorId, parentId, text, itemId, itemType);
+        } else if (itemType === 'post') {
           savedComment = await createCommentForPost(authorId, itemId, text);
         } else if (itemType === 'reel') {
           savedComment = await createCommentForReel(authorId, itemId, text);
@@ -127,19 +131,23 @@ export const initSocket = (server) => {
 
         if (savedComment) {
           const roomName = `${itemType}_${itemId}`;
-          socket.to(roomName).emit('comment:created', {
+          io.in(roomName).emit('comment:created', {
             itemId,
             itemType,
-            comment: savedComment
+            comment: {
+              id: savedComment._id,
+              authorId: savedComment.author,
+              text: savedComment.text,
+              createdAt: savedComment.createdAt,
+              updatedAt: savedComment.updatedAt,
+              parentId: savedComment.parentId || null,
+            },
           });
-          // Emit lại danh sách comment mới nhất
-          await emitCommentsListForItem(itemId, itemType, 10);
+          // ĐÃ ĐẢM BẢO emitCommentsListForItem được gọi trong comment.server.js
+          // Không cần gọi lại ở đây để tránh double emit
         }
       } catch (error) {
-        console.error('Error creating comment:', error);
-        socket.emit('comment:error', {
-          message: 'Không thể tạo bình luận, vui lòng thử lại'
-        });
+        socket.emit('comments:error', { message: 'Không thể tạo bình luận' });
       }
     });
 
@@ -170,6 +178,19 @@ export const initSocket = (server) => {
         });
       } catch (error) {
         // Có thể emit lỗi nếu muốn
+      }
+    });
+
+    // Lấy danh sách comment qua socket (realtime)
+    socket.on('comments:get', async ({ itemId, itemType, limit = 10, userId }) => {
+      try {
+        const { getCommentsListForItem } = await import('../server/comment.server.js');
+        const { comments, metrics } = await getCommentsListForItem(itemId, itemType, limit, userId);
+        const roomName = `${itemType}_${itemId}`;
+        // Emit realtime cho tất cả client trong room (không chỉ socket.emit)
+        io.in(roomName).emit('comments:updated', { comments, metrics, itemId, itemType });
+      } catch (error) {
+        socket.emit('comments:error', { message: 'Không thể lấy danh sách bình luận' });
       }
     });
 

@@ -49,7 +49,6 @@ const emitSocketEvent = async (savedComment, eventType = 'newComment') => {
       }
 
       io.to(roomName).emit(eventType, eventData);
-      console.log(`Emitted ${eventType} to room: ${roomName}`);
     }
   } catch (error) {
     console.error('Error emitting socket event:', error);
@@ -71,6 +70,8 @@ export const createCommentForPost = async (authorId, postId, text) => {
     if (savedComment) {
       // Emit socket event
       await emitSocketEvent(savedComment, 'comment:created');
+      // ĐẢM BẢO emit lại danh sách comment mới nhất
+      await emitCommentsListForItem(postId, 'post', 100);
     }
 
     return savedComment;
@@ -93,8 +94,8 @@ export const createCommentForReel = async (authorId, reelId, text) => {
     const savedComment = await Comment.create(newCommentData);
 
     if (savedComment) {
-      // Emit socket event
       await emitSocketEvent(savedComment, 'comment:created');
+      await emitCommentsListForItem(reelId, 'reel', 100);
     }
 
     return savedComment;
@@ -128,8 +129,8 @@ export const createReplyForComment = async (authorId, parentId, text, associated
     const savedReply = await Comment.create(replyData);
 
     if (savedReply) {
-      // Emit socket event với event type là 'comment:created'
       await emitSocketEvent(savedReply, 'comment:created');
+      await emitCommentsListForItem(associatedItemId, itemType, 100);
     }
 
     return savedReply;
@@ -257,7 +258,6 @@ export const getCommentsListForItem = async (itemId, itemType, limit = 10, logge
       buffedReplies: buffedMetrics.replies,
       hasMore: allComments.length > limit
     };
-
   } else {
     // Get all comments for non-buffed items
     const allComments = await Comment.find({ [mappedType]: itemId })
@@ -338,19 +338,31 @@ export const getCommentsListForItem = async (itemId, itemType, limit = 10, logge
   }
 
   // Add ownership flags
-  const commentsWithOwnership = comments.map(comment => ({
-    ...comment,
-    isOwnComment: comment.author?._id?.toString() === loggedInUserId,
-    replies: comment.replies?.map(reply => ({
-      ...reply,
-      isOwnComment: reply.author?._id?.toString() === loggedInUserId
-    }))
-  }));
-
-  return {
-    comments: commentsWithOwnership,
-    metrics
-  };
+  if (isBuffedItem) {
+    // Add ownership flags (buffed)
+    const ensureRepliesArray = (comment) => ({
+      ...comment,
+      replies: Array.isArray(comment.replies) ? comment.replies.map(ensureRepliesArray) : [],
+      isOwnComment: comment.author?._id?.toString() === loggedInUserId
+    });
+    const commentsWithOwnership = comments.map(ensureRepliesArray);
+    return {
+      comments: commentsWithOwnership,
+      metrics
+    };
+  } else {
+    // Add ownership flags (real)
+    const addOwnership = (comment) => ({
+      ...comment,
+      replies: Array.isArray(comment.replies) ? comment.replies.map(addOwnership) : [],
+      isOwnComment: comment.author?._id?.toString() === loggedInUserId
+    });
+    const commentsWithOwnership = comments.map(addOwnership);
+    return {
+      comments: commentsWithOwnership,
+      metrics
+    };
+  }
 };
 
 // Emit toàn bộ danh sách comment về room
