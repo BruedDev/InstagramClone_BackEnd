@@ -4,7 +4,7 @@ import { verifyToken } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
-router.get('/getPostHome', getPostHome);
+router.get('/getPostHome', verifyToken, getPostHome);
 router.get('/suggestUsers', verifyToken, suggestUsers);
 router.get('/getStoryHome', verifyToken, getStoryHome);
 

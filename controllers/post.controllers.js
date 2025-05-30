@@ -1,5 +1,4 @@
 // controllers/post.controllers.js
-
 import Post from '../models/post.model.js';
 import { uploadImage, uploadVideo } from '../utils/cloudinaryUpload.js';
 import User from '../models/user.model.js';
@@ -103,6 +102,9 @@ export const getPostUser = async (req, res) => {
       .populate('author', 'username profilePicture fullname checkMark')
       .lean();
 
+    // Lấy userId đang đăng nhập
+    const loggedInUserId = req.user?.id;
+
     // Process posts with counts
     const processedPosts = await Promise.all(posts.map(async post => {
       // Get comment counts
@@ -116,45 +118,54 @@ export const getPostUser = async (req, res) => {
         parentId: { $ne: null }
       });
 
+      // Đảm bảo likes là mảng string
+      const likesArr = (post.likes || []).map(id => id.toString());
+      // Kiểm tra trạng thái like
+      const isLike = likesArr.includes(loggedInUserId);
+
       // For vanloc19_6's posts
       if (user.username === 'vanloc19_6') {
-        const buffedLikes = 200000 + Math.floor(Math.random() * 300000);
-        const buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
-        const buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
-        const totalComments = buffedCommentCount + buffedReplyCount;
-
+        // Nếu chưa có buffedLikes thì random 1 lần và lưu vào DB
+        if (!post.buffedLikes) {
+          post.buffedLikes = 200000 + Math.floor(Math.random() * 300000);
+          await Post.findByIdAndUpdate(post._id, { buffedLikes: post.buffedLikes });
+        }
+        // likes thực tế = buffedLikes + likesArr.length
+        const totalLikes = (post.buffedLikes || 0) + likesArr.length;
         return {
           ...post,
-          likes: buffedLikes,
-          realLikes: post.likes?.length || 0,
+          likes: totalLikes,
+          realLikes: likesArr.length,
           isBuffed: true,
-          buffedLikes: buffedLikes,
-          commentCount: buffedCommentCount,
-          replyCount: buffedReplyCount,
-          totalComments,
-          totalLikes: buffedLikes,
+          buffedLikes: post.buffedLikes,
+          commentCount: commentCount,
+          replyCount: replyCount,
+          totalComments: commentCount + replyCount,
+          totalLikes: totalLikes,
           engagement: {
-            likes: buffedLikes,
-            comments: totalComments,
-            total: buffedLikes + totalComments
-          }
+            likes: totalLikes,
+            comments: commentCount + replyCount,
+            total: totalLikes + commentCount + replyCount
+          },
+          isLike: !!isLike
         };
       }
 
       // For normal users
       return {
         ...post,
-        likes: post.likes?.length || 0,
+        likes: likesArr.length,
         isBuffed: false,
         commentCount,
         replyCount,
         totalComments: commentCount + replyCount,
-        totalLikes: post.likes?.length || 0,
+        totalLikes: likesArr.length,
         engagement: {
-          likes: post.likes?.length || 0,
+          likes: likesArr.length,
           comments: commentCount + replyCount,
-          total: (post.likes?.length || 0) + commentCount + replyCount
-        }
+          total: likesArr.length + commentCount + replyCount
+        },
+        isLike: !!isLike
       };
     }));
 
@@ -196,6 +207,10 @@ export const getPostById = async (req, res) => {
       parentId: { $ne: null }
     });
 
+    // Kiểm tra trạng thái like
+    const loggedInUserId = req.user?.id;
+    const isLike = post.likes?.some(id => id.toString() === loggedInUserId);
+
     // For vanloc19_6's post
     if (post.author.username === 'vanloc19_6') {
       const buffedLikes = 200000 + Math.floor(Math.random() * 300000);
@@ -217,7 +232,8 @@ export const getPostById = async (req, res) => {
           likes: buffedLikes,
           comments: totalComments,
           total: buffedLikes + totalComments
-        }
+        },
+        isLike: false // buffed user không cho like thật
       };
 
       return res.status(200).json({
@@ -227,20 +243,24 @@ export const getPostById = async (req, res) => {
       });
     }
 
+    // Đảm bảo likes là mảng string
+    const likesArr = (post.likes || []).map(id => id.toString());
+
     // For normal posts
     const postWithCounts = {
       ...post,
-      likes: post.likes?.length || 0,
+      likes: likesArr.length,
       isBuffed: false,
       commentCount,
       replyCount,
       totalComments: commentCount + replyCount,
-      totalLikes: post.likes?.length || 0,
+      totalLikes: likesArr.length,
       engagement: {
-        likes: post.likes?.length || 0,
+        likes: likesArr.length,
         comments: commentCount + replyCount,
-        total: (post.likes?.length || 0) + commentCount + replyCount
-      }
+        total: likesArr.length + commentCount + replyCount
+      },
+      isLike: !!isLike
     };
 
     res.status(200).json({
@@ -518,12 +538,13 @@ export const getCommentsForItem = async (req, res) => {
       buffedUserComments.sort(sortByEngagement);
 
       // Combine all comments maintaining priority order
-      const allComments = [
+      let allComments = [
         ...loggedInUserComments,
         ...realUserComments,
         ...buffedUserComments
       ];
-
+      // Sắp xếp lại toàn bộ theo createdAt giảm dần (mới nhất lên trên)
+      allComments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       comments = allComments.slice(0, limit);
 
       metrics = {
@@ -597,11 +618,14 @@ export const getCommentsForItem = async (req, res) => {
       otherComments.sort(sortByDate);
 
       // Combine with priority order
-      comments = [
+      let allNormalComments = [
         ...loggedInUserComments,
         ...realUserComments,
         ...otherComments
-      ].slice(0, limit);
+      ];
+      // Sắp xếp lại toàn bộ theo createdAt giảm dần (mới nhất lên trên)
+      allNormalComments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      comments = allNormalComments.slice(0, limit);
 
       // Calculate total replies
       const totalReplies = allComments.filter(comment => comment.parentId).length;
@@ -639,6 +663,35 @@ export const getCommentsForItem = async (req, res) => {
       success: false,
       message: 'Lỗi máy chủ khi lấy bình luận'
     });
+  }
+};
+
+// Like/Unlike Post (toggle)
+export const likePost = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy bài viết' });
+    }
+    let isLike = false;
+    if (post.likes && post.likes.includes(userId)) {
+      // Unlike
+      post.likes = post.likes.filter(id => id.toString() !== userId);
+      isLike = false;
+    } else {
+      // Like
+      post.likes = [...(post.likes || []), userId];
+      isLike = true;
+    }
+    await post.save();
+    // Đảm bảo trả về totalLikes mới nhất
+    const totalLikes = post.likes.length;
+    res.status(200).json({ success: true, isLike, totalLikes });
+  } catch (error) {
+    console.error('Lỗi khi like/unlike bài viết:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
   }
 };
 

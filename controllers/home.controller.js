@@ -11,30 +11,44 @@ export const getPostHome = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    const loggedInUserId = req.user?.id;
     // Process posts with buffed data for vanloc19_6
     const processedPosts = await Promise.all(posts.map(async post => {
+      // Đảm bảo likes là mảng string (nếu post.likes là undefined/null thì trả về [])
+      const likesArr = Array.isArray(post.likes) ? post.likes.map(id => id?.toString()) : [];
+      let isLike = false;
+      if (loggedInUserId && likesArr.length > 0) {
+        isLike = likesArr.includes(loggedInUserId.toString());
+      }
       if (post.author.username === 'vanloc19_6') {
-        // Generate buffed data for vanloc19_6's posts
-        const buffedLikes = 200000 + Math.floor(Math.random() * 300000);
+        // Nếu chưa có buffedLikes thì random 1 lần và lưu vào DB
+        let buffedLikes = post.buffedLikes;
+        if (typeof buffedLikes !== 'number') {
+          buffedLikes = 200000 + Math.floor(Math.random() * 300000);
+          await Post.findByIdAndUpdate(post._id, { buffedLikes });
+        }
+        // likes thực tế = buffedLikes + likesArr.length
+        const totalLikes = (buffedLikes || 0) + likesArr.length;
+        // Lấy số comment/reply buff như cũ (có thể random mỗi lần nếu muốn, hoặc cũng lưu DB nếu cần)
         const buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
         const buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
         const totalComments = buffedCommentCount + buffedReplyCount;
-
         return {
           ...post,
-          likes: buffedLikes,
-          realLikes: post.likes?.length || 0,
+          likes: totalLikes,
+          realLikes: likesArr.length,
           isBuffed: true,
           buffedLikes: buffedLikes,
           commentCount: buffedCommentCount,
           replyCount: buffedReplyCount,
           totalComments: totalComments,
-          totalLikes: buffedLikes,
+          totalLikes: totalLikes,
           engagement: {
-            likes: buffedLikes,
+            likes: totalLikes,
             comments: totalComments,
-            total: buffedLikes + totalComments
-          }
+            total: totalLikes + totalComments
+          },
+          isLike: isLike
         };
       }
 
@@ -55,12 +69,14 @@ export const getPostHome = async (req, res) => {
         replyCount,
         totalComments: commentCount + replyCount,
         likes: post.likes?.length || 0,
+        totalLikes: post.likes?.length || 0, // Đảm bảo luôn có totalLikes
         isBuffed: false,
         engagement: {
           likes: post.likes?.length || 0,
           comments: commentCount + replyCount,
           total: (post.likes?.length || 0) + commentCount + replyCount
-        }
+        },
+        isLike: isLike
       };
     }));
 

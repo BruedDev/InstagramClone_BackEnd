@@ -37,7 +37,11 @@ const postSchema = new mongoose.Schema({
   comments: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Comment'
-  }]
+  }],
+  buffedLikes: {
+    type: Number,
+    default: null
+  }
 }, { timestamps: true });
 
 const Post = mongoose.model('Post', postSchema);

@@ -57,7 +57,7 @@ const StorySchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index để tự động xóa stories hết hạn
-StorySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// XÓA HOẶC COMMENT DÒNG NÀY ĐỂ KHÔNG TỰ ĐỘNG XÓA STORY HẾT HẠN
+// StorySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.model('Story', StorySchema);

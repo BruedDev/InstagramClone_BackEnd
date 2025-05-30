@@ -1,7 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { handleMessages } from '../server/message.service.js';
 import { handleCall } from '../server/call.service.js';
-import { createCommentForPost, createCommentForReel } from '../server/comment.server.js';
+import { createCommentForPost, createCommentForReel, emitCommentsListForItem } from '../server/comment.server.js';
 import User from '../models/user.model.js';
 
 let io;
@@ -92,22 +92,26 @@ export const initSocket = (server) => {
     });
 
     // Xử lý xóa comment
-    socket.on('comment:delete', ({ commentId, itemId, itemType }) => {
+    socket.on('comment:delete', async ({ commentId, itemId, itemType }) => {
       const roomName = `${itemType}_${itemId}`;
       socket.to(roomName).emit('comment:deleted', {
         commentId,
         itemId
       });
+      // Emit lại danh sách comment mới nhất
+      await emitCommentsListForItem(itemId, itemType, 10);
     });
 
     // Xử lý edit comment
-    socket.on('comment:edit', ({ commentId, newText, itemId, itemType }) => {
+    socket.on('comment:edit', async ({ commentId, newText, itemId, itemType }) => {
       const roomName = `${itemType}_${itemId}`;
       socket.to(roomName).emit('comment:edited', {
         commentId,
         newText,
         itemId
       });
+      // Emit lại danh sách comment mới nhất
+      await emitCommentsListForItem(itemId, itemType, 10);
     });
 
     // Thêm xử lý tạo comment mới
@@ -128,12 +132,44 @@ export const initSocket = (server) => {
             itemType,
             comment: savedComment
           });
+          // Emit lại danh sách comment mới nhất
+          await emitCommentsListForItem(itemId, itemType, 10);
         }
       } catch (error) {
         console.error('Error creating comment:', error);
         socket.emit('comment:error', {
           message: 'Không thể tạo bình luận, vui lòng thử lại'
         });
+      }
+    });
+
+    // XỬ LÝ REALTIME LIKE BÀI VIẾT
+    socket.on('post:like', async ({ postId, userId }) => {
+      try {
+        // Import động controller để tránh circular
+        const { likePost } = await import('../controllers/post.controllers.js');
+        // Tạo req, res giả lập
+        const req = { params: { postId }, user: { id: userId } };
+        let isLike = false;
+        let totalLikes = 0;
+        const res = {
+          status: () => res,
+          json: (data) => {
+            isLike = data.isLike;
+            totalLikes = data.totalLikes || 0;
+          }
+        };
+        await likePost(req, res);
+        // Emit tới tất cả client trong room post
+        const roomName = `post_${postId}`;
+        io.to(roomName).emit('post:liked', {
+          postId,
+          userId,
+          isLike,
+          totalLikes
+        });
+      } catch (error) {
+        // Có thể emit lỗi nếu muốn
       }
     });
 
