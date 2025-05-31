@@ -112,6 +112,18 @@ export const getUser = async (req, res) => {
     // Sắp xếp archived stories theo thời gian mới nhất
     user.archivedStories.sort((a, b) => b.createdAt - a.createdAt);
 
+    // Kiểm tra user này có story còn hạn không
+    const now = new Date();
+    const hasStories = await (async () => {
+      const count = await (await import('../models/story.model.js')).default.countDocuments({
+        author: user._id,
+        isArchived: false,
+        expiresAt: { $gt: now }
+      });
+      return count > 0;
+    })();
+    user.hasStories = hasStories;
+
     res.status(200).json({
       success: true,
       user

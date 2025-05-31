@@ -12,6 +12,15 @@ export const getPostHome = async (req, res) => {
       .lean();
 
     const loggedInUserId = req.user?.id;
+
+    // Lấy danh sách userId có story còn hạn
+    const now = new Date();
+    const usersWithStories = await Story.distinct('author', {
+      isArchived: false,
+      expiresAt: { $gt: now }
+    });
+    const usersWithStoriesSet = new Set(usersWithStories.map(id => id.toString()));
+
     // Process posts with buffed data for vanloc19_6
     const processedPosts = await Promise.all(posts.map(async post => {
       // Đảm bảo likes là mảng string (nếu post.likes là undefined/null thì trả về [])
@@ -61,7 +70,8 @@ export const getPostHome = async (req, res) => {
             comments: totalComments,
             total: totalLikes + totalComments
           },
-          isLike: isLike
+          isLike: isLike,
+          hasStories: usersWithStoriesSet.has(post.author._id.toString())
         };
       }
 
@@ -89,7 +99,8 @@ export const getPostHome = async (req, res) => {
           comments: commentCount + replyCount,
           total: (post.likes?.length || 0) + commentCount + replyCount
         },
-        isLike: isLike
+        isLike: isLike,
+        hasStories: usersWithStoriesSet.has(post.author._id.toString())
       };
     }));
 
