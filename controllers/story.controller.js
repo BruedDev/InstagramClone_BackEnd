@@ -5,11 +5,15 @@ import { uploadImage, uploadVideo, uploadAudio } from '../utils/cloudinaryUpload
 // Lấy kho lưu trữ stories đã hết hạn
 export const getArchivedStories = async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ success: false, message: 'Bạn chưa đăng nhập hoặc token không hợp lệ' });
+    }
     const myId = req.user.id;
 
-    // Lấy tất cả stories của người dùng
-    const allStories = await Story.find({
-      author: myId
+    // Lấy tất cả stories đã archive của người dùng
+    const archivedStories = await Story.find({
+      author: myId,
+      isArchived: true
     })
       .populate('author', 'username profilePicture checkMark')
       .populate('viewers.user', 'username profilePicture')
@@ -17,7 +21,7 @@ export const getArchivedStories = async (req, res) => {
       .lean();
 
     // Format stories mà không nhóm theo tháng
-    const formattedStories = allStories.map(story => ({
+    const formattedStories = archivedStories.map(story => ({
       _id: story._id,
       media: story.media,
       mediaType: story.mediaType,
@@ -41,8 +45,7 @@ export const getArchivedStories = async (req, res) => {
       isVideoWithAudio: story.mediaType === 'video/audio',
       isImageWithAudio: story.mediaType === 'image/audio',
       muteOriginalAudio: story.muteOriginalAudio || false,
-      status: story.isArchived ? 'archived' :
-        new Date(story.expiresAt) < new Date() ? 'expired' : 'active'
+      status: 'archived'
     }));
 
     res.status(200).json({

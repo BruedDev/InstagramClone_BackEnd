@@ -5,6 +5,8 @@ import applyMiddlewares from './middlewares/cors.middleware.js';
 import connectDB from './config/db.config.js';
 import routes from './routes/index.routes.js';
 import { initSocket } from './middlewares/socket.middleware.js';
+import cron from 'node-cron';
+import { archiveExpiredStories } from './helper/ScanStory.js';
 
 dotenv.config();
 
@@ -35,6 +37,11 @@ app.use(routes);
 // Route test
 app.get('/', (req, res) => {
   res.send('API Instagram Clone đang hoạt động');
+});
+
+// Đặt cron job để tự động archive story hết hạn mỗi giây (test nhanh)
+cron.schedule('*/1 * * * * *', async () => {
+  await archiveExpiredStories();
 });
 
 const PORT = process.env.PORT || 5000;

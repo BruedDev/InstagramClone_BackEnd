@@ -7,8 +7,6 @@ import messengerRoutes from './messenger.routes.js';
 import storyRoutes from './story.routes.js';
 import iceTokenRoute from './ice-token.routes.js';
 
-
-
 const router = express.Router();
 
 router.use('/api/auth', authRoutes);

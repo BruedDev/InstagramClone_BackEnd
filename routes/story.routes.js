@@ -5,7 +5,7 @@ import upload from '../helper/cloudinary.js';
 
 const router = express.Router();
 
-router.get('/archived-stories', getArchivedStories);
+router.get('/archived-stories', verifyToken, getArchivedStories);
 router.get('/getStoryId/:userId', getStoriesByUser);
 
 // Cập nhật route createStory để hỗ trợ upload nhiều file

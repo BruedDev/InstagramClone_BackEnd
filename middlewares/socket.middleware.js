@@ -161,7 +161,7 @@ export const initSocket = (server) => {
     socket.on('post:like', async ({ postId, userId }) => {
       try {
         // Import động controller để tránh circular
-        const { likePost } = await import('../controllers/post.controllers.js');
+        const { likePost } = await import('../controllers/post.controller.js');
         // Tạo req, res giả lập
         const req = { params: { postId }, user: { id: userId } };
         let isLike = false;

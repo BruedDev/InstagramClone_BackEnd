@@ -7,7 +7,7 @@ import {
   addComment,
   getCommentsForItem,
   likePost
-} from '../controllers/post.controllers.js';
+} from '../controllers/post.controller.js';
 import { verifyToken } from '../middlewares/auth.middleware.js';
 import upload from '../helper/cloudinary.js';
 
