@@ -41,6 +41,14 @@ const postSchema = new mongoose.Schema({
   buffedLikes: {
     type: Number,
     default: null
+  },
+  buffedCommentCount: {
+    type: Number,
+    default: null
+  },
+  buffedReplyCount: {
+    type: Number,
+    default: null
   }
 }, { timestamps: true });
 

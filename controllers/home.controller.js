@@ -12,6 +12,15 @@ export const getPostHome = async (req, res) => {
       .lean();
 
     const loggedInUserId = req.user?.id;
+
+    // Lấy danh sách userId có story còn hạn
+    const now = new Date();
+    const usersWithStories = await Story.distinct('author', {
+      isArchived: false,
+      expiresAt: { $gt: now }
+    });
+    const usersWithStoriesSet = new Set(usersWithStories.map(id => id.toString()));
+
     // Process posts with buffed data for vanloc19_6
     const processedPosts = await Promise.all(posts.map(async post => {
       // Đảm bảo likes là mảng string (nếu post.likes là undefined/null thì trả về [])
@@ -27,12 +36,25 @@ export const getPostHome = async (req, res) => {
           buffedLikes = 200000 + Math.floor(Math.random() * 300000);
           await Post.findByIdAndUpdate(post._id, { buffedLikes });
         }
-        // likes thực tế = buffedLikes + likesArr.length
+        // Lấy lại buffedCommentCount và buffedReplyCount từ DB, không random lại
+        let buffedCommentCount = post.buffedCommentCount;
+        let buffedReplyCount = post.buffedReplyCount;
+        // Nếu chưa có thì random và lưu lại (chỉ random 1 lần duy nhất)
+        let updateObj = {};
+        if (typeof buffedCommentCount !== 'number') {
+          buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
+          updateObj.buffedCommentCount = buffedCommentCount;
+        }
+        if (typeof buffedReplyCount !== 'number') {
+          buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
+          updateObj.buffedReplyCount = buffedReplyCount;
+        }
+        if (Object.keys(updateObj).length > 0) {
+          await Post.findByIdAndUpdate(post._id, updateObj);
+        }
+        // Luôn lấy lại số đã lưu (sau khi update nếu cần)
         const totalLikes = (buffedLikes || 0) + likesArr.length;
-        // Lấy số comment/reply buff như cũ (có thể random mỗi lần nếu muốn, hoặc cũng lưu DB nếu cần)
-        const buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
-        const buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
-        const totalComments = buffedCommentCount + buffedReplyCount;
+        const totalComments = (buffedCommentCount || 0) + (buffedReplyCount || 0);
         return {
           ...post,
           likes: totalLikes,
@@ -48,7 +70,8 @@ export const getPostHome = async (req, res) => {
             comments: totalComments,
             total: totalLikes + totalComments
           },
-          isLike: isLike
+          isLike: isLike,
+          hasStories: usersWithStoriesSet.has(post.author._id.toString())
         };
       }
 
@@ -76,7 +99,8 @@ export const getPostHome = async (req, res) => {
           comments: commentCount + replyCount,
           total: (post.likes?.length || 0) + commentCount + replyCount
         },
-        isLike: isLike
+        isLike: isLike,
+        hasStories: usersWithStoriesSet.has(post.author._id.toString())
       };
     }));
 
