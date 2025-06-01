@@ -5,25 +5,50 @@ import { getIO } from '../middlewares/socket.middleware.js';
 // Gửi tin nhắn
 export const sendMessage = async (req, res) => {
   try {
-    const { receiverId, message } = req.body;
+    const { receiverId, message, replyTo } = req.body; // Thêm replyTo
     const senderId = req.user._id;
 
     if (!receiverId || !message) {
       return res.status(400).json({ message: 'receiverId và message là bắt buộc' });
     }
 
+    // Kiểm tra tin nhắn được reply có tồn tại không (nếu có replyTo)
+    let parentMessage = null;
+    if (replyTo) {
+      parentMessage = await Message.findById(replyTo)
+        .populate('senderId', 'username fullName')
+        .populate('receiverId', 'username fullName');
+
+      if (!parentMessage) {
+        return res.status(400).json({ message: 'Tin nhắn được reply không tồn tại' });
+      }
+    }
+
     const newMessage = new Message({
       senderId,
       receiverId,
       message,
+      replyTo: replyTo || null, // Thêm replyTo vào message
     });
 
     const savedMessage = await newMessage.save();
 
+    // Populate để lấy thông tin đầy đủ
+    const populatedMessage = await Message.findById(savedMessage._id)
+      .populate('senderId', 'username fullName checkMark')
+      .populate('receiverId', 'username fullName')
+      .populate({
+        path: 'replyTo',
+        populate: {
+          path: 'senderId',
+          select: 'username fullName'
+        }
+      });
+
     const author = await User.findById(senderId).select('username fullName checkMark');
 
     return res.status(201).json({
-      message: savedMessage,
+      message: populatedMessage,
       author: author || null,
     });
   } catch (error) {
@@ -38,8 +63,8 @@ export const getMessages = async (req, res) => {
     const userId1 = req.user._id.toString();
     const userId2 = req.params.userId;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50; // Tăng limit lên 50
-    const loadAll = req.query.loadAll === 'true'; // Tham số để load tất cả
+    const limit = parseInt(req.query.limit) || 50;
+    const loadAll = req.query.loadAll === 'true';
 
     if (!userId2) {
       return res.status(400).json({ message: 'userId là bắt buộc' });
@@ -49,25 +74,33 @@ export const getMessages = async (req, res) => {
     let totalMessages = 0;
     let hasMore = false;
 
+    const populateOptions = [
+      { path: 'senderId', select: '_id username fullName profilePicture checkMark' },
+      { path: 'receiverId', select: '_id username fullName profilePicture checkMark' },
+      {
+        path: 'replyTo',
+        populate: {
+          path: 'senderId',
+          select: 'username fullName'
+        }
+      }
+    ];
+
     if (loadAll) {
-      // Lấy tất cả tin nhắn giữa 2 người
       messages = await Message.find({
         $or: [
           { senderId: userId1, receiverId: userId2 },
           { senderId: userId2, receiverId: userId1 },
         ],
       })
-        .populate('senderId', '_id username fullName profilePicture checkMark')
-        .populate('receiverId', '_id username fullName profilePicture checkMark')
-        .sort({ createdAt: 1 }) // Sắp xếp từ cũ đến mới
-        .lean(); // Sử dụng lean() để tăng performance
+        .populate(populateOptions)
+        .sort({ createdAt: 1 })
+        .lean();
 
       totalMessages = messages.length;
     } else {
-      // Lấy tin nhắn theo phân trang (cho infinite scroll)
       const skip = (page - 1) * limit;
 
-      // Đếm tổng số tin nhắn
       totalMessages = await Message.countDocuments({
         $or: [
           { senderId: userId1, receiverId: userId2 },
@@ -81,17 +114,13 @@ export const getMessages = async (req, res) => {
           { senderId: userId2, receiverId: userId1 },
         ],
       })
-        .populate('senderId', '_id username fullName profilePicture checkMark')
-        .populate('receiverId', '_id username fullName profilePicture checkMark')
-        .sort({ createdAt: -1 }) // Mới nhất trước để phân trang
+        .populate(populateOptions)
+        .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean();
 
-      // Đảo ngược để hiển thị từ cũ đến mới
       messages.reverse();
-
-      // Kiểm tra còn tin nhắn để load không
       hasMore = skip + limit < totalMessages;
     }
 
@@ -110,7 +139,6 @@ export const getMessages = async (req, res) => {
         { isRead: true }
       );
 
-      // Emit socket event để cập nhật trạng thái real-time
       const io = getIO();
       if (io) {
         io.to(userId2).emit('messagesRead', {
@@ -126,6 +154,12 @@ export const getMessages = async (req, res) => {
       senderId: msg.senderId,
       receiverId: msg.receiverId,
       message: msg.message,
+      // Nếu replyTo là object (đã populate), giữ nguyên, nếu là string (id), thì populate thủ công
+      replyTo: (msg.replyTo && typeof msg.replyTo === 'object' && msg.replyTo !== null && msg.replyTo.message)
+        ? msg.replyTo
+        : (msg.replyTo
+          ? messages.find(m => m._id.toString() === (msg.replyTo._id ? msg.replyTo._id.toString() : msg.replyTo.toString())) || msg.replyTo
+          : null),
       isRead: unreadMessageIds.includes(msg._id.toString()) ? true : msg.isRead,
       createdAt: msg.createdAt,
       updatedAt: msg.updatedAt,
