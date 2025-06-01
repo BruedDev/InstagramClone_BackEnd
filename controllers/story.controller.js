@@ -36,7 +36,7 @@ export const getArchivedStories = async (req, res) => {
         _id: story.author._id,
         username: story.author.username,
         profilePicture: story.author.profilePicture,
-        checkMark: story.author.checkMark
+        checkMark: story.author
       },
       audio: story.audio || null,
       audioPublicId: story.audioPublicId || null,
@@ -90,10 +90,23 @@ export const createStory = async (req, res) => {
 
     // Upload media file
     let mediaResult;
+    let videoDuration = null;
     if (baseMediaType === 'image') {
       mediaResult = await uploadImage(mediaFile.path, 'stories');
     } else {
       mediaResult = await uploadVideo(mediaFile.path, 'stories');
+      // Nếu là video thường (không có audio), lấy duration và kiểm tra max 1 phút
+      if (baseMediaType === 'video' && !audioFile) {
+        if (mediaResult.duration) {
+          videoDuration = mediaResult.duration;
+          if (videoDuration > 60) {
+            return res.status(400).json({
+              success: false,
+              message: 'Video gốc không được vượt quá 1 phút.'
+            });
+          }
+        }
+      }
     }
 
     // Upload audio file nếu có
@@ -111,6 +124,10 @@ export const createStory = async (req, res) => {
       caption,
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
     };
+    // Nếu là video thường, thêm videoDuration
+    if (videoDuration) {
+      storyData.videoDuration = videoDuration;
+    }
 
     // Thêm thông tin audio nếu có (chỉ cho image/audio hoặc video/audio)
     if (audioResult) {
@@ -132,7 +149,8 @@ export const createStory = async (req, res) => {
         ...newStory.toObject(),
         hasAudio: !!audioResult,
         isVideoWithAudio: mediaType === 'video/audio',
-        isImageWithAudio: mediaType === 'image/audio'
+        isImageWithAudio: mediaType === 'image/audio',
+        videoDuration: (!audioResult && (videoDuration || newStory.videoDuration)) || null
       }
     });
   } catch (error) {
@@ -145,6 +163,7 @@ export const createStory = async (req, res) => {
 };
 
 // Lấy danh sách story của một người dùng (chỉ trả về _id và author)
+// GỢI Ý: Để cập nhật view, FE nên gọi socket.emit('story:view', { storyId, userId }) khi user xem story
 export const getStoriesByUser = async (req, res) => {
   try {
     const { userId } = req.params;

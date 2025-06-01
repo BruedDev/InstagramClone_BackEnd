@@ -39,8 +39,8 @@ app.get('/', (req, res) => {
   res.send('API Instagram Clone đang hoạt động');
 });
 
-// Đặt cron job để tự động archive story hết hạn mỗi giây (test nhanh)
-cron.schedule('*/1 * * * * *', async () => {
+// Đặt cron job để tự động archive story hết hạn mỗi giờ
+cron.schedule('0 * * * *', async () => {
   await archiveExpiredStories();
 });
 

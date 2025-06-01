@@ -2,6 +2,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { handleMessages } from '../server/message.service.js';
 import { handleCall } from '../server/call.service.js';
 import { createCommentForPost, createCommentForReel, emitCommentsListForItem } from '../server/comment.server.js';
+import { viewStory } from '../server/story.server.js';
 import User from '../models/user.model.js';
 
 let io;
@@ -197,6 +198,25 @@ export const initSocket = (server) => {
         io.in(roomName).emit('comments:updated', { comments, metrics, itemId, itemType });
       } catch (error) {
         socket.emit('comments:error', { message: 'Không thể lấy danh sách bình luận' });
+      }
+    });
+
+    // XỬ LÝ REALTIME VIEW STORY
+    socket.on('story:view', async ({ storyId, userId }) => {
+      try {
+        if (!storyId || !userId) return;
+        // Join room story_<storyId> để nhận realtime
+        const roomName = `story_${storyId}`;
+        socket.join(roomName);
+        // Cập nhật view
+        const viewers = await viewStory(storyId, userId);
+        // Emit tới tất cả client trong room story
+        io.in(roomName).emit('story:viewed', {
+          storyId,
+          viewers
+        });
+      } catch (error) {
+        socket.emit('story:error', { message: 'Không thể cập nhật view story' });
       }
     });
 

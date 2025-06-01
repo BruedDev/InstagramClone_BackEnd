@@ -2,7 +2,7 @@ import Message from '../models/messenger.model.js';
 import User from '../models/user.model.js';
 import { getIO } from '../middlewares/socket.middleware.js';
 
-// Gửi tin nhắn (bạn đã viết rồi)
+// Gửi tin nhắn
 export const sendMessage = async (req, res) => {
   try {
     const { receiverId, message } = req.body;
@@ -32,7 +32,7 @@ export const sendMessage = async (req, res) => {
   }
 };
 
-// Phiên bản cải thiện của getMessages - lấy toàn bộ cuộc hội thoại
+// lấy tin nhắn giữa 2 người dùng
 export const getMessages = async (req, res) => {
   try {
     const userId1 = req.user._id.toString();
@@ -149,7 +149,7 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// Thêm hàm mới để lấy tin nhắn với infinite scroll
+// cuộn để lấy tin nhắn với phân trang
 export const getMessagesWithPagination = async (req, res) => {
   try {
     const userId1 = req.user._id.toString();
@@ -205,30 +205,6 @@ export const getMessagesWithPagination = async (req, res) => {
   }
 };
 
-// // Lấy danh sách ID tất cả user (để nhắn tin với bất kỳ ai)
-// export const getUserMessages = async (req, res) => {
-//   try {
-//     // Lấy tất cả user trong hệ thống (trừ chính mình)
-//     const userId = req.user._id.toString();
-
-//     const users = await User.find({ _id: { $ne: userId } })
-//       .select('_id username profilePicture checkMark');
-
-//     // Đảm bảo luôn trả về checkMark true/false
-//     const usersWithCheckMark = users.map(u => ({
-//       _id: u._id,
-//       username: u.username,
-//       profilePicture: u.profilePicture,
-//       checkMark: !!u.checkMark
-//     }));
-
-//     return res.status(200).json(usersWithCheckMark);
-//   } catch (error) {
-//     console.error('Lỗi lấy danh sách user:', error);
-//     return res.status(500).json({ message: 'Lỗi server khi lấy danh sách user' });
-//   }
-// };
-
 // Lấy số lượng tin nhắn chưa đọc
 export const getUnreadCount = async (req, res) => {
   try {
@@ -266,6 +242,7 @@ export const getUnreadCount = async (req, res) => {
   }
 };
 
+// trạng thái online/ offline của người dùng
 export const checkUserStatus = async (req, res) => {
   try {
     const { identifier } = req.params;
@@ -315,7 +292,7 @@ export const checkUserStatus = async (req, res) => {
   }
 };
 
-// Cập nhật getUserMessages để trả về thêm thông tin thời gian
+// lấy danh sách người dùng để nhắn tin
 export const getUserMessages = async (req, res) => {
   try {
     const userId = req.user._id.toString();
@@ -442,7 +419,7 @@ export const getRecentChats = async (req, res) => {
   }
 };
 
-// Thêm controller mới để đánh dấu tin nhắn đã đọc
+// đánh dấu tin nhắn đã đọc
 export const markMessagesAsRead = async (req, res) => {
   try {
     const { messageIds, senderId } = req.body;
