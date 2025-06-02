@@ -14,20 +14,30 @@ export const handleMessages = (socket, io, onlineUsers) => {
      *   senderId,
      *   receiverId,
      *   message,
-     *   tempId (thêm)
+     *   tempId,
+     *   replyTo (optional)
      * }
      */
     try {
-      // Lưu tin nhắn vào DB
+      // Lưu tin nhắn vào DB, thêm replyTo nếu có
       const newMessage = await Message.create({
         senderId: data.senderId,
         receiverId: data.receiverId,
         message: data.message,
+        replyTo: data.replyTo || null
       });
 
       // Lấy thông tin người gửi để gửi về client
       const author = await User.findById(data.senderId)
         .select('username fullName checkMark profilePicture lastActive lastOnline');
+
+      // Nếu có replyTo, populate thông tin tin nhắn được reply
+      let replyToMessage = null;
+      if (data.replyTo) {
+        replyToMessage = await Message.findById(data.replyTo)
+          .populate('senderId', 'username fullName checkMark profilePicture')
+          .populate('receiverId', 'username fullName checkMark profilePicture');
+      }
 
       // Tạo đối tượng gửi lại client
       const response = {
@@ -38,6 +48,13 @@ export const handleMessages = (socket, io, onlineUsers) => {
         createdAt: newMessage.createdAt,
         isRead: newMessage.isRead,
         author,
+        replyTo: replyToMessage ? {
+          _id: replyToMessage._id,
+          message: replyToMessage.message,
+          senderId: replyToMessage.senderId,
+          receiverId: replyToMessage.receiverId,
+          createdAt: replyToMessage.createdAt
+        } : null
       };
 
       // Gửi tin nhắn cho người nhận thông qua phòng
