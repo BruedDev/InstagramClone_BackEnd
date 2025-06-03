@@ -1,7 +1,9 @@
+// server/message.service.js
 import Message from '../models/messenger.model.js';
 import User from '../models/user.model.js';
 import { uploadImage, uploadVideo } from '../utils/cloudinaryUpload.js';
 import upload from '../helper/cloudinary.js';
+import fs from 'fs';
 
 export const handleMessages = (socket, io, onlineUsers) => {
   // Đăng ký socket join phòng theo userId (để gửi tin nhắn riêng)
@@ -30,7 +32,7 @@ export const handleMessages = (socket, io, onlineUsers) => {
         const buffer = Buffer.from(data.media.split(',')[1], 'base64');
         const ext = data.mediaType === 'image' ? '.jpg' : '.mp4';
         const tempPath = `temp/mess_${Date.now()}${ext}`;
-        require('fs').writeFileSync(tempPath, buffer);
+        fs.writeFileSync(tempPath, buffer);
         if (data.mediaType === 'image') {
           const result = await uploadImage(tempPath, 'messenger/images');
           mediaUrl = result.secure_url;
@@ -80,7 +82,8 @@ export const handleMessages = (socket, io, onlineUsers) => {
           createdAt: replyToMessage.createdAt
         } : null,
         mediaUrl,
-        mediaType
+        mediaType,
+        tempId: data.tempId || undefined // Thêm tempId để FE thay thế message tạm
       };
 
       // Gửi tin nhắn cho người nhận thông qua phòng
@@ -187,5 +190,44 @@ export const handleMessages = (socket, io, onlineUsers) => {
       userId,
       status: isOnline ? 'online' : 'offline'
     });
+  });
+
+  // Xử lý sự kiện uploadMediaComplete từ client
+  socket.on('uploadMediaComplete', async (data) => {
+    /**
+     * data = {
+     *   messageId,
+     *   media (base64 hoặc url),
+     *   mediaType
+     * }
+     */
+    try {
+      const { messageId, media, mediaType } = data;
+
+      let mediaUrl = null;
+      // Nếu client gửi media dạng base64 (image/video)
+      if (media && mediaType) {
+        const buffer = Buffer.from(media.split(',')[1], 'base64');
+        const ext = mediaType === 'image' ? '.jpg' : '.mp4';
+        const tempPath = `temp/mess_${Date.now()}${ext}`;
+        fs.writeFileSync(tempPath, buffer);
+        if (mediaType === 'image') {
+          const result = await uploadImage(tempPath, 'messenger/images');
+          mediaUrl = result.secure_url;
+        } else if (mediaType === 'video') {
+          const result = await uploadVideo(tempPath, 'messenger/videos');
+          mediaUrl = result.secure_url;
+        }
+      }
+
+      // Gửi sự kiện updateMessageMedia cho client để cập nhật mediaUrl
+      io.emit('updateMessageMedia', {
+        messageId,
+        mediaUrl
+      });
+
+    } catch (error) {
+      console.error('Lỗi khi xử lý upload media:', error);
+    }
   });
 };
