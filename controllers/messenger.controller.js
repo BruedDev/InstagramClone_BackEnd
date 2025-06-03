@@ -1,15 +1,31 @@
 import Message from '../models/messenger.model.js';
 import User from '../models/user.model.js';
 import { getIO } from '../middlewares/socket.middleware.js';
+import { uploadImage, uploadVideo } from '../utils/cloudinaryUpload.js';
 
-// Gửi tin nhắn
+// Gửi tin nhắn (hỗ trợ gửi media)
 export const sendMessage = async (req, res) => {
   try {
-    const { receiverId, message, replyTo } = req.body; // Thêm replyTo
+    const { receiverId, message, replyTo } = req.body;
     const senderId = req.user._id;
+    let mediaUrl = null;
+    let mediaType = null;
 
-    if (!receiverId || !message) {
-      return res.status(400).json({ message: 'receiverId và message là bắt buộc' });
+    // Xử lý file upload nếu có
+    if (req.file) {
+      if (req.file.mimetype.startsWith('image/')) {
+        const result = await uploadImage(req.file.path, 'messenger/images');
+        mediaUrl = result.secure_url;
+        mediaType = 'image';
+      } else if (req.file.mimetype.startsWith('video/')) {
+        const result = await uploadVideo(req.file.path, 'messenger/videos');
+        mediaUrl = result.secure_url;
+        mediaType = 'video';
+      }
+    }
+
+    if (!receiverId || (!message && !mediaUrl)) {
+      return res.status(400).json({ message: 'receiverId và message hoặc media là bắt buộc' });
     }
 
     // Kiểm tra tin nhắn được reply có tồn tại không (nếu có replyTo)
@@ -24,11 +40,24 @@ export const sendMessage = async (req, res) => {
       }
     }
 
+    // Xác định rõ ràng replyTo là trả lời tin nhắn của chính mình hay của người khác
+    let replyType = null;
+    if (parentMessage) {
+      if (parentMessage.senderId.toString() === senderId.toString()) {
+        replyType = "self"; // Trả lời tin nhắn của chính mình
+      } else {
+        replyType = "other"; // Trả lời tin nhắn của người khác
+      }
+    }
+
     const newMessage = new Message({
       senderId,
       receiverId,
       message,
-      replyTo: replyTo || null, // Thêm replyTo vào message
+      replyTo: parentMessage ? parentMessage._id : undefined,
+      mediaUrl,
+      mediaType,
+      replyType // Thêm trường này để FE biết rõ loại reply
     });
 
     const savedMessage = await newMessage.save();
@@ -45,11 +74,9 @@ export const sendMessage = async (req, res) => {
         }
       });
 
-    const author = await User.findById(senderId).select('username fullName checkMark');
-
+    // Đưa replyType vào response
     return res.status(201).json({
-      message: populatedMessage,
-      author: author || null,
+      message: { ...populatedMessage.toObject(), replyType }
     });
   } catch (error) {
     console.error('Lỗi gửi tin nhắn:', error);
@@ -149,22 +176,38 @@ export const getMessages = async (req, res) => {
     }
 
     // Format response data
-    const formattedMessages = messages.map(msg => ({
-      _id: msg._id,
-      senderId: msg.senderId,
-      receiverId: msg.receiverId,
-      message: msg.message,
-      // Nếu replyTo là object (đã populate), giữ nguyên, nếu là string (id), thì populate thủ công
-      replyTo: (msg.replyTo && typeof msg.replyTo === 'object' && msg.replyTo !== null && msg.replyTo.message)
-        ? msg.replyTo
-        : (msg.replyTo
-          ? messages.find(m => m._id.toString() === (msg.replyTo._id ? msg.replyTo._id.toString() : msg.replyTo.toString())) || msg.replyTo
-          : null),
-      isRead: unreadMessageIds.includes(msg._id.toString()) ? true : msg.isRead,
-      createdAt: msg.createdAt,
-      updatedAt: msg.updatedAt,
-      isOwnMessage: msg.senderId._id.toString() === userId1
-    }));
+    const formattedMessages = messages.map(msg => {
+      // Xác định rõ ràng replyType cho từng message
+      let replyType = null;
+      let replyToWithType = null;
+      if (msg.replyTo && typeof msg.replyTo === 'object' && msg.replyTo.senderId) {
+        // Nếu senderId là object, lấy _id, nếu là string thì dùng luôn
+        const replySenderId = typeof msg.replyTo.senderId === 'object' ? msg.replyTo.senderId._id : msg.replyTo.senderId;
+        if (replySenderId && replySenderId.toString() === msg.senderId._id.toString()) {
+          replyType = 'self';
+        } else {
+          replyType = 'other';
+        }
+        // Gắn replyType vào replyTo object để FE phân biệt
+        replyToWithType = { ...msg.replyTo, replyType };
+      } else {
+        replyToWithType = msg.replyTo || null;
+      }
+      return {
+        _id: msg._id,
+        senderId: msg.senderId,
+        receiverId: msg.receiverId,
+        message: msg.message,
+        mediaUrl: msg.mediaUrl,
+        mediaType: msg.mediaType,
+        replyTo: replyToWithType,
+        isRead: unreadMessageIds.includes(msg._id.toString()) ? true : msg.isRead,
+        createdAt: msg.createdAt,
+        updatedAt: msg.updatedAt,
+        isOwnMessage: msg.senderId._id.toString() === userId1,
+        replyType // Thêm trường này vào mỗi message (nếu cần tổng thể)
+      };
+    });
 
     return res.status(200).json({
       messages: formattedMessages,

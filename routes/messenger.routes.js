@@ -10,11 +10,12 @@ import {
   getMessagesWithPagination
 } from '../controllers/messenger.controller.js';
 import { verifyToken } from '../middlewares/auth.middleware.js';
+import upload from '../helper/cloudinary.js';
 
 const router = express.Router();
 
-// Gửi tin nhắn
-router.post('/sendMessage', verifyToken, sendMessage);
+// Gửi tin nhắn (hỗ trợ gửi media)
+router.post('/sendMessage', verifyToken, upload.single('file'), sendMessage);
 
 // Lấy tin nhắn giữa 2 người dùng
 router.get('/messages/:userId', verifyToken, getMessages);
