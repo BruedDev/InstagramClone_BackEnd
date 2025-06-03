@@ -27,6 +27,15 @@ const messageSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  mediaUrl: {
+    type: String,
+    default: null,
+  },
+  mediaType: {
+    type: String, // 'image' | 'video'
+    enum: [null, 'image', 'video'],
+    default: null,
+  },
 }, { timestamps: true });
 
 messageSchema.index({ senderId: 1, receiverId: 1 });
