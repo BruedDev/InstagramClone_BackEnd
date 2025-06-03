@@ -419,7 +419,7 @@ export const addComment = async (req, res) => {
     }
 
     const populatedComment = await Comment.findById(savedComment._id)
-      .populate('author', 'username profilePicture fullname isVerified')
+      .populate('author', 'username profilePicture fullname isVerified checkMark')
       .lean();
 
     res.status(201).json({
@@ -657,14 +657,28 @@ export const getCommentsForItem = async (req, res) => {
       };
     }
 
-    // Add ownership flags
+    // Add ownership flags and checkMark to author (recursive for replies)
+    function addCheckMarkToReplies(replies) {
+      if (!Array.isArray(replies)) return [];
+      return replies.map(reply => ({
+        ...reply,
+        isOwnComment: reply.author?._id?.toString() === loggedInUserId,
+        author: {
+          ...reply.author,
+          checkMark: reply.author?.username === 'vanloc19_6' ? true : (reply.author?.checkMark || false)
+        },
+        replies: addCheckMarkToReplies(reply.replies)
+      }));
+    }
+
     const commentsWithOwnership = comments.map(comment => ({
       ...comment,
-      isOwnComment: comment.author?._id.toString() === loggedInUserId,
-      replies: comment.replies?.map(reply => ({
-        ...reply,
-        isOwnComment: reply.author?._id.toString() === loggedInUserId
-      }))
+      isOwnComment: comment.author?._id?.toString() === loggedInUserId,
+      author: {
+        ...comment.author,
+        checkMark: comment.author?.username === 'vanloc19_6' ? true : (comment.author?.checkMark || false)
+      },
+      replies: addCheckMarkToReplies(comment.replies)
     }));
 
     res.status(200).json({

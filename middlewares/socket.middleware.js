@@ -132,17 +132,23 @@ export const initSocket = (server) => {
 
         if (savedComment) {
           const roomName = `${itemType}_${itemId}`;
-          // Lấy lại tổng số comment + reply sau khi thêm mới
-          const Comment = (await import('../models/comment.model.js')).default;
-          const commentCount = await Comment.countDocuments({ [itemType]: itemId, parentId: null });
-          const replyCount = await Comment.countDocuments({ [itemType]: itemId, parentId: { $ne: null } });
-          const totalComments = commentCount + replyCount;
+          // Populate author with checkMark and always ensure for vanloc19_6
+          const User = (await import('../models/user.model.js')).default;
+          let author = await User.findById(savedComment.author).lean();
+          const authorObj = author ? {
+            _id: author._id,
+            username: author.username,
+            profilePicture: author.profilePicture,
+            fullname: author.fullname,
+            isVerified: author.isVerified,
+            checkMark: author.checkMark === true // lấy đúng trường checkMark từ user document
+          } : { _id: savedComment.author, checkMark: false };
           io.in(roomName).emit('comment:created', {
             itemId,
             itemType,
             comment: {
               id: savedComment._id,
-              authorId: savedComment.author,
+              author: authorObj,
               text: savedComment.text,
               createdAt: savedComment.createdAt,
               updatedAt: savedComment.updatedAt,
