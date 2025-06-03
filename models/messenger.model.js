@@ -15,7 +15,8 @@ const messageSchema = new mongoose.Schema({
   },
   message: {
     type: String,
-    required: true,
+    required: false, // Cho phép gửi media không cần message text
+    default: '',
   },
   replyTo: {
     type: mongoose.Schema.Types.ObjectId,
