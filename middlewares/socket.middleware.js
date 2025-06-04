@@ -12,7 +12,7 @@ export const initSocket = (server) => {
   const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:3001',
-    'https://instagram-clone-seven-sable.vercel.app',
+    'https://instagram-clone-front-end-six.vercel.app',
     process.env.FRONTEND_URL,
   ].filter(Boolean);
 

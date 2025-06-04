@@ -8,7 +8,7 @@ const corsMiddleware = () => {
       const allowedOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
-        'https://instagram-clone-seven-sable.vercel.app',
+        'https://instagram-clone-front-end-six.vercel.app',
         'https://randomuser.me/api/portraits',
         'https://randomuser.me',
         'https://randomuser.me/api',
