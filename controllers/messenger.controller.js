@@ -2,6 +2,7 @@ import Message from '../models/messenger.model.js';
 import User from '../models/user.model.js';
 import { getIO } from '../middlewares/socket.middleware.js';
 import { uploadImage, uploadVideo } from '../utils/cloudinaryUpload.js';
+import { v2 as cloudinary } from 'cloudinary';
 
 // Gửi tin nhắn (hỗ trợ gửi media)
 export const sendMessage = async (req, res) => {
@@ -564,5 +565,49 @@ export const markMessagesAsRead = async (req, res) => {
     return res.status(500).json({
       message: 'Lỗi server khi đánh dấu tin nhắn đã đọc'
     });
+  }
+};
+
+// Xóa tất cả tin nhắn giữa 2 user (bao gồm cả media trên Cloudinary)
+export const deleteMessagesBetweenUsers = async (req, res) => {
+  try {
+    const userId1 = req.user._id.toString();
+    const userId2 = req.params.userId;
+    if (!userId2) {
+      return res.status(400).json({ message: 'userId là bắt buộc' });
+    }
+    // Lấy tất cả tin nhắn giữa 2 user
+    const messages = await Message.find({
+      $or: [
+        { senderId: userId1, receiverId: userId2 },
+        { senderId: userId2, receiverId: userId1 },
+      ],
+    });
+    // Xóa media trên Cloudinary nếu có
+    for (const msg of messages) {
+      if (msg.mediaUrl) {
+        // Lấy public_id từ url cloudinary
+        const match = msg.mediaUrl.match(/\/([^\/]+)\.(jpg|jpeg|png|mp4|webp|gif)$/i);
+        if (match) {
+          const publicId = msg.mediaUrl.split('/').slice(-2).join('/').replace(/\.(jpg|jpeg|png|mp4|webp|gif)$/i, '');
+          try {
+            await cloudinary.uploader.destroy(publicId, { resource_type: msg.mediaType === 'video' ? 'video' : 'image' });
+          } catch (err) {
+            console.error('Lỗi xóa media Cloudinary:', err);
+          }
+        }
+      }
+    }
+    // Xóa tin nhắn trong MongoDB
+    await Message.deleteMany({
+      $or: [
+        { senderId: userId1, receiverId: userId2 },
+        { senderId: userId2, receiverId: userId1 },
+      ],
+    });
+    return res.status(200).json({ success: true, message: 'Đã xóa toàn bộ tin nhắn giữa 2 người dùng' });
+  } catch (error) {
+    console.error('Lỗi khi xóa tin nhắn giữa 2 user:', error);
+    return res.status(500).json({ message: 'Lỗi server khi xóa tin nhắn' });
   }
 };

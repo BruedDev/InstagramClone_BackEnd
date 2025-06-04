@@ -7,7 +7,8 @@ import {
   checkUserStatus,
   getRecentChats,
   markMessagesAsRead,
-  getMessagesWithPagination
+  getMessagesWithPagination,
+  deleteMessagesBetweenUsers
 } from '../controllers/messenger.controller.js';
 import { verifyToken } from '../middlewares/auth.middleware.js';
 import upload from '../helper/cloudinary.js';
@@ -33,4 +34,8 @@ router.get('/status/:identifier', checkUserStatus);
 router.get('/recent-chats', verifyToken, getRecentChats);
 
 router.post('/mark-as-read', verifyToken, markMessagesAsRead);
+
+// Xóa toàn bộ tin nhắn giữa 2 user (bao gồm cả media)
+router.delete('/messages/:userId', verifyToken, deleteMessagesBetweenUsers);
+
 export default router;
