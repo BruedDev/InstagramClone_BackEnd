@@ -14,6 +14,8 @@ import {
   generateNestedComments,
   generateBuffedMetrics
 } from '../helper/buffAdmin.js';
+import cloudinary from 'cloudinary';
+
 
 // Đăng bài viết (ảnh hoặc video)
 export const createPost = async (req, res) => {
@@ -316,12 +318,15 @@ export const deletePostById = async (req, res) => {
         });
     }
 
-    // Nếu bạn dùng Cloudinary, bạn có thể xóa file tại đây bằng publicId:
-    // await cloudinary.uploader.destroy(post.filePublicId);
+    // Xóa ảnh khỏi Cloudinary nếu có publicId
+    if (post.filePublicId) {
+      await cloudinary.v2.uploader.destroy(post.filePublicId);
+    }
 
+    // Xóa post khỏi DB
     await post.deleteOne();
 
-    // Cập nhật lại mảng posts của user (loại bỏ postId vừa xóa)
+    // Cập nhật lại danh sách post trong user
     await User.findByIdAndUpdate(userId, { $pull: { posts: postId } });
 
     res.status(200).json({ success: true, message: 'Xóa bài viết thành công' });
