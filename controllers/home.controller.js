@@ -195,12 +195,60 @@ export const getStoryHome = async (req, res) => {
       expiresAt: { $gt: new Date() }
     };
 
-    if (userId) {
-      userCondition = { _id: userId };
-      storyCondition.author = userId;
-    } else {
-      userCondition = {}; // Lấy tất cả users
-      // Không filter author, lấy tất cả story còn hạn
+    // Lấy user vanloc19_6 để lấy _id
+    const vanlocUser = await User.findOne({ username: 'vanloc19_6' }).lean();
+    if (vanlocUser) {
+      // Nếu không filter userId, thì lấy story của vanloc19_6 bất kể expiresAt
+      if (!userId) {
+        // Lấy tất cả story của vanloc19_6 (isArchived: false)
+        const vanlocStories = await Story.find({
+          author: vanlocUser._id,
+          isArchived: false
+        })
+          .select('_id author')
+          .populate('author', 'username profilePicture checkMark')
+          .sort({ createdAt: -1 })
+          .lean();
+        // Lấy các story còn hạn của user khác
+        storyCondition.author = { $ne: vanlocUser._id };
+        const stories = await Story.find(storyCondition)
+          .select('_id author')
+          .populate('author', 'username profilePicture checkMark')
+          .sort({ createdAt: -1 })
+          .lean();
+        // Ghép lại, story của vanloc19_6 luôn ở đầu
+        const allStories = [...vanlocStories, ...stories];
+        // Tách story của chính mình ra đầu tiên
+        const myStories = allStories.filter(story => story.author._id.toString() === myId.toString());
+        const otherStories = allStories.filter(story => story.author._id.toString() !== myId.toString());
+        const sortedStories = [...myStories, ...otherStories];
+        return res.status(200).json({
+          success: true,
+          stories: sortedStories.map(story => ({
+            _id: story._id,
+            author: story.author
+          })),
+          isSpecificUser: !!userId
+        });
+      } else if (userId && userId.toString() === vanlocUser._id.toString()) {
+        // Nếu lấy story của userId là vanloc19_6 thì cũng lấy tất cả story (isArchived: false)
+        const vanlocStories = await Story.find({
+          author: vanlocUser._id,
+          isArchived: false
+        })
+          .select('_id author')
+          .populate('author', 'username profilePicture checkMark')
+          .sort({ createdAt: -1 })
+          .lean();
+        return res.status(200).json({
+          success: true,
+          stories: vanlocStories.map(story => ({
+            _id: story._id,
+            author: story.author
+          })),
+          isSpecificUser: !!userId
+        });
+      }
     }
 
     // 3. Lấy users theo điều kiện

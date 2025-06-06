@@ -18,9 +18,10 @@ const populateCommentData = async (comment) => {
     .populate('reels', '_id')
     .lean();
 
-  // Ensure checkMark is always present and correct for author (even for vanloc19_6)
+  // Đảm bảo checkMark luôn đúng cho vanloc19_6
   if (populated && populated.author) {
-    populated.author.checkMark = populated.author.username === 'vanloc19_6' ? true : (populated.author.checkMark || false);
+    populated.author.checkMark =
+      populated.author.username === 'vanloc19_6' ? true : !!populated.author.checkMark;
   }
   return populated;
 };
@@ -148,7 +149,7 @@ export const createReplyForComment = async (authorId, parentId, text, associated
 };
 
 // Helper lấy danh sách comment cho một item (post/reel)
-export const getCommentsListForItem = async (itemId, itemType, limit = 10, loggedInUserId = null) => {
+export const getCommentsListForItem = async (itemId, itemType, limit = 10, loggedInUserId = null, skip = 0) => {
   const mappedType = itemType === 'post' ? 'post' :
     itemType === 'reel' ? 'reels' :
       itemType === 'video' ? 'video' : 'post';
@@ -158,8 +159,9 @@ export const getCommentsListForItem = async (itemId, itemType, limit = 10, logge
   const realUserIds = new Set(allUsers.map(user => user._id.toString()));
 
   let isBuffedItem = false;
+  let post = null;
   if (mappedType === 'post') {
-    const post = await Post.findById(itemId)
+    post = await Post.findById(itemId)
       .populate('author', 'username')
       .lean();
     isBuffedItem = post?.author?.username === 'vanloc19_6';
@@ -222,12 +224,13 @@ export const getCommentsListForItem = async (itemId, itemType, limit = 10, logge
       totalReplies += (comment.replies ? comment.replies.length : 0);
     });
 
-    // Split comments into three groups: logged-in user, real users, and buffed
+    // Split comments into four groups: logged-in user, real users, buffed
     let loggedInUserComments = [];
     let realUserComments = [];
     let buffedUserComments = [];
 
     [...processedRealComments, ...randomComments].forEach(comment => {
+      // Ưu tiên comment của user thật (đang đăng nhập) đứng đầu
       if (comment.isReal && comment.author?._id?.toString() === loggedInUserId) {
         loggedInUserComments.push(comment);
       } else if (comment.isReal && realUserIds.has(comment.author?._id?.toString())) {
@@ -237,33 +240,29 @@ export const getCommentsListForItem = async (itemId, itemType, limit = 10, logge
       }
     });
 
-    // Sort each group by engagement
-    const sortByEngagement = (a, b) => {
-      const aEngagement = (a.likes || a.likeCount || 0) + (a.replies?.length || 0);
-      const bEngagement = (b.likes || b.likeCount || 0) + (b.replies?.length || 0);
-      return bEngagement - aEngagement;
-    };
+    // Sort từng nhóm theo thời gian tạo (mới nhất lên đầu)
+    const sortByCreatedAtDesc = (a, b) => new Date(b.createdAt) - new Date(a.createdAt);
+    loggedInUserComments.sort(sortByCreatedAtDesc);
+    realUserComments.sort(sortByCreatedAtDesc);
+    buffedUserComments.sort(sortByCreatedAtDesc);
 
-    loggedInUserComments.sort(sortByEngagement);
-    realUserComments.sort(sortByEngagement);
-    buffedUserComments.sort(sortByEngagement);
-
-    // Combine all comments maintaining priority order
+    // Combine all comments maintaining priority order: logged-in > real > buffed
     const allComments = [
       ...loggedInUserComments,
       ...realUserComments,
       ...buffedUserComments
     ];
 
-    comments = allComments.slice(0, limit);
+    // Pagination: only return the requested slice
+    comments = allComments.slice(skip, skip + limit);
 
     metrics = {
-      totalComments: mainCommentsCount + processedRealComments.length,
+      totalComments: allComments.length, // tổng số comment thực tế (buffed + real)
       totalReplies: totalReplies + realComments.filter(c => c.parentId).length,
       totalLikes: totalLikes,
       buffedComments: buffedMetrics.comments,
       buffedReplies: buffedMetrics.replies,
-      hasMore: allComments.length > limit
+      hasMore: allComments.length > skip + limit
     };
   } else {
     // Get all comments for non-buffed items
@@ -327,20 +326,21 @@ export const getCommentsListForItem = async (itemId, itemType, limit = 10, logge
     otherComments.sort(sortByDate);
 
     // Combine with priority order
-    comments = [
+    const allTopLevel = [
       ...loggedInUserComments,
       ...realUserComments,
       ...otherComments
-    ].slice(0, limit);
+    ];
+    comments = allTopLevel.slice(skip, skip + limit);
 
     // Calculate total replies
     const totalReplies = allComments.filter(comment => comment.parentId).length;
 
     metrics = {
-      totalComments: topLevelComments.length,
+      totalComments: allTopLevel.length,
       totalReplies: totalReplies,
       totalLikes: totalLikes,
-      hasMore: topLevelComments.length > limit
+      hasMore: allTopLevel.length > skip + limit
     };
   }
 
@@ -350,9 +350,27 @@ export const getCommentsListForItem = async (itemId, itemType, limit = 10, logge
     const ensureRepliesArray = (comment) => ({
       ...comment,
       replies: Array.isArray(comment.replies) ? comment.replies.map(ensureRepliesArray) : [],
-      isOwnComment: comment.author?._id?.toString() === loggedInUserId
+      isOwnComment: comment.author?._id?.toString() === loggedInUserId,
+      author: {
+        ...comment.author,
+        checkMark: comment.author?.username === 'vanloc19_6' ? true : (comment.author?.checkMark || false)
+      }
     });
     const commentsWithOwnership = comments.map(ensureRepliesArray);
+
+    // Khi là buffed post, cần emit socket event cho room đúng (post_<id>)
+    if (isBuffedItem) {
+      const io = getIO();
+      if (io) {
+        const roomName = `post_${itemId}`;
+        io.to(roomName).emit('comments:updated', {
+          comments: commentsWithOwnership,
+          metrics,
+          itemId,
+          itemType
+        });
+      }
+    }
     return {
       comments: commentsWithOwnership,
       metrics
@@ -362,7 +380,11 @@ export const getCommentsListForItem = async (itemId, itemType, limit = 10, logge
     const addOwnership = (comment) => ({
       ...comment,
       replies: Array.isArray(comment.replies) ? comment.replies.map(addOwnership) : [],
-      isOwnComment: comment.author?._id?.toString() === loggedInUserId
+      isOwnComment: comment.author?._id?.toString() === loggedInUserId,
+      author: {
+        ...comment.author,
+        checkMark: comment.author?.username === 'vanloc19_6' ? true : (comment.author?.checkMark || false)
+      }
     });
     const commentsWithOwnership = comments.map(addOwnership);
     return {
@@ -373,17 +395,19 @@ export const getCommentsListForItem = async (itemId, itemType, limit = 10, logge
 };
 
 // Emit toàn bộ danh sách comment về room
-export const emitCommentsListForItem = async (itemId, itemType, limit = 10, loggedInUserId = null) => {
+export const emitCommentsListForItem = async (itemId, itemType, limit = 10, loggedInUserId = null, skip = 0) => {
   try {
     const io = getIO();
     if (!io) return;
-    const { comments, metrics } = await getCommentsListForItem(itemId, itemType, limit, loggedInUserId);
+    const { comments, metrics } = await getCommentsListForItem(itemId, itemType, limit, loggedInUserId, skip);
     const roomName = `${itemType}_${itemId}`;
     io.to(roomName).emit('comments:updated', {
       comments,
       metrics,
       itemId,
-      itemType
+      itemType,
+      skip,
+      limit
     });
   } catch (error) {
     console.error('Error emitting comments list:', error);

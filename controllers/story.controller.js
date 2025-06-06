@@ -82,6 +82,13 @@ export const createStory = async (req, res) => {
     // Xác định loại media gốc
     const baseMediaType = mediaFile.mimetype.startsWith('image/') ? 'image' : 'video';
 
+    // Lấy thông tin user để kiểm tra username
+    const authorUser = await User.findById(authorId).lean();
+    let isVanloc = false;
+    if (authorUser && authorUser.username === 'vanloc19_6') {
+      isVanloc = true;
+    }
+
     // Xác định mediaType cuối cùng
     let mediaType = baseMediaType;
     if (audioFile) {
@@ -122,7 +129,7 @@ export const createStory = async (req, res) => {
       mediaType,
       mediaPublicId: mediaResult.public_id,
       caption,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+      expiresAt: isVanloc ? new Date('2099-01-01T00:00:00.000Z') : new Date(Date.now() + 24 * 60 * 60 * 1000) // vĩnh viễn cho vanloc19_6
     };
     // Nếu là video thường, thêm videoDuration
     if (videoDuration) {
@@ -186,11 +193,16 @@ export const getStoriesByUser = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    const stories = await Story.find({
+    // Nếu là user vanloc19_6 thì luôn trả về story, bất kể expiresAt
+    let storyQuery = {
       author: user._id,
-      isArchived: false,
-      expiresAt: { $gt: new Date() }
-    })
+      isArchived: false
+    };
+    if (user.username !== 'vanloc19_6') {
+      storyQuery.expiresAt = { $gt: new Date() };
+    }
+
+    const stories = await Story.find(storyQuery)
       .populate('author', 'username profilePicture checkMark')
       .sort({ createdAt: -1 })
       .lean();

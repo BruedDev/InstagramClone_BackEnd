@@ -2,7 +2,8 @@ import Story from '../models/story.model.js';
 import User from '../models/user.model.js';
 
 // Cập nhật view cho story, chỉ cho phép mỗi user 1 lần
-export const viewStory = async (storyId, userId) => {
+// Thêm tham số onlineUsers
+export const viewStory = async (storyId, userId, onlineUsers) => {
   if (!storyId || !userId) return null;
   const story = await Story.findById(storyId);
   if (!story) return null;
@@ -41,8 +42,12 @@ export const viewStory = async (storyId, userId) => {
         fullName: v.user.fullName,
         profilePicture: v.user.profilePicture,
         viewedAt: v.viewedAt
+        // Không trả về isOnline, lastActive, lastOnline ở đây nữa
       });
     }
   }
-  return Array.from(viewerMap2.values());
+  // Loại bỏ tác giả khỏi viewers
+  const authorId = (updated.author?._id || updated.user?._id || updated.author || updated.user || "").toString();
+  const filteredViewers = Array.from(viewerMap2.values()).filter(v => v._id.toString() !== authorId);
+  return filteredViewers;
 };

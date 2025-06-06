@@ -16,15 +16,19 @@ export const archiveExpiredStories = async () => {
       if (story.author && story.author.username === 'vanloc19_6') {
         continue;
       }
-      // Tạo bản ghi mới trong ArchivedStorie
-      const archived = new ArchivedStorie({
-        ...story.toObject(),
-        isArchived: true
-      });
-      await archived.save();
-
-      // Xóa story khỏi collection Story
-      await Story.deleteOne({ _id: story._id });
+      try {
+        // Tạo bản ghi mới trong ArchivedStorie
+        const archived = new ArchivedStorie({
+          ...story.toObject(),
+          isArchived: true
+        });
+        await archived.save();
+        // Chỉ xóa story nếu lưu thành công
+        await Story.deleteOne({ _id: story._id });
+      } catch (err) {
+        console.error('Lỗi khi lưu vào ArchivedStorie hoặc xóa Story:', err, '\nStoryId:', story._id);
+        // KHÔNG xóa story nếu lỗi lưu kho lưu trữ
+      }
     }
   } catch (error) {
     console.error('Lỗi khi archive stories:', error);
