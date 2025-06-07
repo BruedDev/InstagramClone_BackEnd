@@ -1,5 +1,6 @@
 import Story from '../models/story.model.js';
 import User from '../models/user.model.js';
+import ArchivedStorie from '../models/archivedStory.model.js';
 import { uploadImage, uploadVideo, uploadAudio } from '../utils/cloudinaryUpload.js';
 
 // Lấy kho lưu trữ stories đã hết hạn
@@ -10,14 +11,13 @@ export const getArchivedStories = async (req, res) => {
     }
     const myId = req.user.id;
 
-    // Lấy tất cả stories đã archive của người dùng
-    const archivedStories = await Story.find({
-      author: myId,
-      isArchived: true
+    // Lấy tất cả stories đã archive của người dùng từ ArchivedStorie
+    const archivedStories = await ArchivedStorie.find({
+      author: myId
     })
       .populate('author', 'username profilePicture checkMark')
       .populate('viewers.user', 'username profilePicture')
-      .sort({ createdAt: -1 }) // Sắp xếp theo thời gian mới nhất
+      .sort({ createdAt: -1 })
       .lean();
 
     // Format stories mà không nhóm theo tháng
@@ -36,7 +36,7 @@ export const getArchivedStories = async (req, res) => {
         _id: story.author._id,
         username: story.author.username,
         profilePicture: story.author.profilePicture,
-        checkMark: story.author
+        checkMark: story.author.checkMark
       },
       audio: story.audio || null,
       audioPublicId: story.audioPublicId || null,
@@ -129,7 +129,8 @@ export const createStory = async (req, res) => {
       mediaType,
       mediaPublicId: mediaResult.public_id,
       caption,
-      expiresAt: isVanloc ? new Date('2099-01-01T00:00:00.000Z') : new Date(Date.now() + 24 * 60 * 60 * 1000) // vĩnh viễn cho vanloc19_6
+      // expiresAt 24 tiếng
+      expiresAt: isVanloc ? new Date('2099-01-01T00:00:00.000Z') : new Date(Date.now() + 24 * 60 * 60 * 1000)
     };
     // Nếu là video thường, thêm videoDuration
     if (videoDuration) {

@@ -12,9 +12,22 @@ export const archiveExpiredStories = async () => {
     }).populate('author', 'username');
 
     for (const story of expiredStories) {
-      // Nếu là user vanloc19_6 thì bỏ qua, không archive
+      // Nếu là user vanloc19_6 thì vẫn lưu vào archive nhưng KHÔNG xóa khỏi Story
       if (story.author && story.author.username === 'vanloc19_6') {
-        continue;
+        try {
+          // Kiểm tra nếu đã có trong archive thì bỏ qua
+          const existed = await ArchivedStorie.findOne({ mediaPublicId: story.mediaPublicId });
+          if (!existed) {
+            const archived = new ArchivedStorie({
+              ...story.toObject(),
+              isArchived: true
+            });
+            await archived.save();
+          }
+        } catch (err) {
+          console.error('Lỗi khi lưu vào ArchivedStorie cho vanloc19_6:', err, '\nStoryId:', story._id);
+        }
+        continue; // KHÔNG xóa khỏi Story
       }
       try {
         // Tạo bản ghi mới trong ArchivedStorie

@@ -1,9 +1,8 @@
 import Story from '../models/story.model.js';
-import User from '../models/user.model.js';
 
 // Cập nhật view cho story, chỉ cho phép mỗi user 1 lần
 // Thêm tham số onlineUsers
-export const viewStory = async (storyId, userId, onlineUsers) => {
+export const viewStory = async (storyId, userId) => {
   if (!storyId || !userId) return null;
   const story = await Story.findById(storyId);
   if (!story) return null;
