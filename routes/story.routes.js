@@ -1,5 +1,5 @@
 import express from 'express';
-import { getArchivedStories, getStoriesByUser, createStory } from '../controllers/story.controller.js';
+import { getArchivedStories, getStoriesByUser, createStory, getMusicStory } from '../controllers/story.controller.js';
 import { verifyToken } from '../middlewares/auth.middleware.js';
 import upload from '../helper/cloudinary.js';
 
@@ -7,6 +7,7 @@ const router = express.Router();
 
 router.get('/archived-stories', verifyToken, getArchivedStories);
 router.get('/getStoryId/:userId', getStoriesByUser);
+router.get('/music', getMusicStory);
 
 // Cập nhật route createStory để hỗ trợ upload nhiều file
 router.post('/createStory',

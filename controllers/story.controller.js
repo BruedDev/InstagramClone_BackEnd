@@ -1,6 +1,7 @@
 import Story from '../models/story.model.js';
 import User from '../models/user.model.js';
 import ArchivedStorie from '../models/archivedStory.model.js';
+import StoryMusic from '../models/storyMusic.model.js';
 import { uploadImage, uploadVideo, uploadAudio } from '../utils/cloudinaryUpload.js';
 
 // Lấy kho lưu trữ stories đã hết hạn
@@ -221,6 +222,24 @@ export const getStoriesByUser = async (req, res) => {
   } catch (error) {
     console.error('Lỗi khi lấy stories theo user:', error);
     res.status(500).json({ success: false, message: 'Lỗi server khi lấy stories theo user' });
+  }
+};
+
+// Lấy danh sách story có nhạc (dành cho admin)
+export const getMusicStory = async (req, res) => {
+  try {
+    const musicList = await StoryMusic.find().sort({ createdAt: -1 }).lean();
+    res.status(200).json({
+      success: true,
+      music: musicList.map(m => ({
+        ...m,
+        start: m.start || 0,
+        end: m.end || (m.duration || null)
+      }))
+    });
+  } catch (error) {
+    console.error('Lỗi getMusicStory:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server khi lấy danh sách nhạc' });
   }
 };
 

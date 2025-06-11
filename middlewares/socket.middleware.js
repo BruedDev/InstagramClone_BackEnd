@@ -195,13 +195,13 @@ export const initSocket = (server) => {
     });
 
     // Lấy danh sách comment qua socket (realtime)
-    socket.on('comments:get', async ({ itemId, itemType, limit = 10, userId }) => {
+    socket.on('comments:get', async ({ itemId, itemType, limit = 10, userId, skip = 0 }) => {
       try {
         const { getCommentsListForItem } = await import('../server/comment.server.js');
-        const { comments, metrics } = await getCommentsListForItem(itemId, itemType, limit, userId);
+        const { comments, metrics } = await getCommentsListForItem(itemId, itemType, limit, userId, skip);
         const roomName = `${itemType}_${itemId}`;
         // Emit realtime cho tất cả client trong room (không chỉ socket.emit)
-        io.in(roomName).emit('comments:updated', { comments, metrics, itemId, itemType });
+        io.in(roomName).emit('comments:updated', { comments, metrics, itemId, itemType, skip, limit });
       } catch (error) {
         socket.emit('comments:error', { message: 'Không thể lấy danh sách bình luận' });
       }
