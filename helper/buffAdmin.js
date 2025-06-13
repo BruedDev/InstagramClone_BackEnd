@@ -131,3 +131,20 @@ export const generateBuffedMetrics = () => {
     replies: Math.floor(Math.random() * 50000) + 100000
   };
 };
+
+// Tạo danh sách user ảo cố định, chỉ random 1 lần duy nhất
+const FAKE_USERS = Array.from({ length: 100 }, (_, i) => generateRandomUser(i));
+
+// Đảm bảo username là duy nhất trong FAKE_USERS
+const uniqueUsernames = new Set();
+for (let i = 0; i < FAKE_USERS.length; i++) {
+  let user = FAKE_USERS[i];
+  while (uniqueUsernames.has(user.username)) {
+    // Nếu trùng username, random lại
+    user = generateRandomUser(i + Math.floor(Math.random() * 1000));
+    FAKE_USERS[i] = user;
+  }
+  uniqueUsernames.add(user.username);
+}
+
+export { FAKE_USERS };

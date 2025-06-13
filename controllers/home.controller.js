@@ -4,6 +4,7 @@ import User from '../models/user.model.js';
 import Story from '../models/story.model.js';
 import { archiveExpiredStories } from '../helper/ScanStory.js';
 import { generateRandomUser } from '../helper/buffAdmin.js';
+import { generateBuffUserPostsHome } from '../helper/buffUserPostHome.js';
 
 export const getPostHome = async (req, res) => {
   try {
@@ -106,51 +107,13 @@ export const getPostHome = async (req, res) => {
     if (!global._FAKE_USERS) {
       global._FAKE_USERS = Array.from({ length: 100 }, (_, i) => generateRandomUser(i));
     }
+    // Không random lại nữa, chỉ tạo 1 lần duy nhất
     const fakeUsers = global._FAKE_USERS;
-
-    // Tạo seed duy nhất cho mỗi page để đảm bảo fake posts khác nhau
-    const pageOffset = (page - 1) * limit;
-
-    // Sinh fake posts với ID duy nhất cho mỗi page
-    const fakePosts = fakeUsers.map((user, idx) => {
-      const likes = Math.floor(Math.random() * 10000);
-      const commentCount = Math.floor(Math.random() * 10000);
-      const replyCount = Math.floor(Math.random() * 2000);
-      const createdAt = new Date(Date.now() - Math.random() * 86400000 * 30);
-
-      // Tạo ID duy nhất bằng cách kết hợp page và index
-      const uniqueId = `fake_post_${page}_${idx}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      return {
-        _id: uniqueId,
-        caption: `Bài viết của người dùng ảo - Page ${page}`,
-        desc: '',
-        fileUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
-        type: 'image',
-        author: {
-          _id: `${user._id}_${page}`, // Đảm bảo author ID cũng unique
-          username: user.username,
-          profilePicture: user.profilePicture,
-          fullName: user.fullName,
-          checkMark: user.isVerified || false
-        },
-        likes: likes,
-        totalLikes: likes,
-        commentCount: commentCount,
-        replyCount: replyCount,
-        totalComments: commentCount + replyCount,
-        isBuffed: true,
-        engagement: {
-          likes: likes,
-          comments: commentCount + replyCount,
-          total: likes + commentCount + replyCount
-        },
-        isLike: false,
-        hasStories: false,
-        createdAt: createdAt,
-        isFake: true // Đánh dấu để FE biết
-      };
-    });
+    // Sử dụng hàm generateBuffUserPostsHome mới để tạo fakePosts động với ảnh từ Unsplash
+    if (!global._FAKE_POSTS) {
+      global._FAKE_POSTS = await generateBuffUserPostsHome(100);
+    }
+    const fakePosts = global._FAKE_POSTS;
 
     // ====== ƯU TIÊN: vanloc19_6 > user thật > user ảo ======
     // 1. Ưu tiên bài của vanloc19_6 lên đầu
@@ -160,14 +123,15 @@ export const getPostHome = async (req, res) => {
     // 3. Bài ảo
     let allPosts = [...vanlocPosts, ...realPosts, ...fakePosts];
 
-    // 4. Sắp xếp: vanloc19_6 trên cùng, sau đó user thật (checkMark ưu tiên), cuối cùng là ảo
+    // 4. Sắp xếp: tất cả bài của vanloc19_6 lên đầu (theo thời gian mới nhất), sau đó user thật (theo thời gian mới nhất), cuối cùng là ảo (theo thời gian mới nhất)
     allPosts.sort((a, b) => {
-      if (a.author?.username === 'vanloc19_6') return -1;
-      if (b.author?.username === 'vanloc19_6') return 1;
-      if (a.isFake && !b.isFake) return 1;
+      const isVanlocA = a.author?.username === 'vanloc19_6';
+      const isVanlocB = b.author?.username === 'vanloc19_6';
+      if (isVanlocA && !isVanlocB) return -1;
+      if (!isVanlocA && isVanlocB) return 1;
+      // Nếu cùng là vanloc19_6 hoặc cùng không phải, sort theo thời gian mới nhất
       if (!a.isFake && b.isFake) return -1;
-      if (b.author?.checkMark && !a.author?.checkMark) return 1;
-      if (a.author?.checkMark && !b.author?.checkMark) return -1;
+      if (a.isFake && !b.isFake) return 1;
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
 
