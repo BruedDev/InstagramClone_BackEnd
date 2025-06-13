@@ -1,8 +1,8 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { handleMessages } from '../server/message.service.js';
 import { handleCall } from '../server/call.service.js';
-import { createCommentForPost, createCommentForReel, emitCommentsListForItem } from '../server/comment.server.js';
-import { viewStory } from '../server/story.server.js';
+import { createCommentForPost, createCommentForReel, emitCommentsListForItem } from '../server/comment.service.js';
+import { viewStory } from '../server/story.service.js';
 import User from '../models/user.model.js';
 
 let io;
@@ -122,7 +122,7 @@ export const initSocket = (server) => {
 
         if (parentId) {
           // Nếu có parentId, gọi hàm tạo reply
-          const { createReplyForComment } = await import('../server/comment.server.js');
+          const { createReplyForComment } = await import('../server/comment.service.js');
           savedComment = await createReplyForComment(authorId, parentId, text, itemId, itemType);
         } else if (itemType === 'post') {
           savedComment = await createCommentForPost(authorId, itemId, text);
@@ -197,7 +197,7 @@ export const initSocket = (server) => {
     // Lấy danh sách comment qua socket (realtime)
     socket.on('comments:get', async ({ itemId, itemType, limit = 10, userId, skip = 0 }) => {
       try {
-        const { getCommentsListForItem } = await import('../server/comment.server.js');
+        const { getCommentsListForItem } = await import('../server/comment.service.js');
         const { comments, metrics } = await getCommentsListForItem(itemId, itemType, limit, userId, skip);
         const roomName = `${itemType}_${itemId}`;
         // Emit realtime cho tất cả client trong room (không chỉ socket.emit)

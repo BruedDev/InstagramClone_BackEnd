@@ -8,6 +8,7 @@ import {
   generateNestedComments,
   generateBuffedMetrics
 } from '../helper/buffAdmin.js';
+import { createNotification } from './notification.service.js';
 
 // Helper function để populate comment data
 const populateCommentData = async (comment) => {
@@ -80,6 +81,18 @@ export const createCommentForPost = async (authorId, postId, text) => {
       await emitSocketEvent(savedComment, 'comment:created');
       // ĐẢM BẢO emit lại danh sách comment mới nhất
       await emitCommentsListForItem(postId, 'post', 100);
+      // Tạo notification cho chủ post
+      const post = await Post.findById(postId).lean();
+      if (post && post.author && post.author.toString() !== authorId.toString()) {
+        await createNotification({
+          user: post.author,
+          type: 'comment',
+          fromUser: authorId,
+          post: postId,
+          comment: savedComment._id,
+          parentComment: null
+        });
+      }
     }
 
     return savedComment;
@@ -139,6 +152,18 @@ export const createReplyForComment = async (authorId, parentId, text, associated
     if (savedReply) {
       await emitSocketEvent(savedReply, 'comment:created');
       await emitCommentsListForItem(associatedItemId, itemType, 100);
+      // Tạo notification cho chủ comment gốc
+      const parentComment = await Comment.findById(parentId).lean();
+      if (parentComment && parentComment.author && parentComment.author.toString() !== authorId.toString()) {
+        await createNotification({
+          user: parentComment.author,
+          type: 'reply',
+          fromUser: authorId,
+          post: itemType === 'post' ? associatedItemId : undefined,
+          comment: savedReply._id,
+          parentComment: parentId
+        });
+      }
     }
 
     return savedReply;

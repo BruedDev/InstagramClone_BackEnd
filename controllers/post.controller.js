@@ -7,7 +7,7 @@ import {
   createCommentForPost,
   createCommentForReel,
   createReplyForComment,
-} from '../server/comment.server.js';
+} from '../server/comment.service.js';
 import {
   generateRandomUser,
   generateRandomComment,
@@ -15,6 +15,7 @@ import {
   generateBuffedMetrics
 } from '../helper/buffAdmin.js';
 import cloudinary from 'cloudinary';
+import { createNotification, removeLikeNotification } from '../server/notification.service.js';
 
 
 // Đăng bài viết (ảnh hoặc video)
@@ -422,6 +423,33 @@ export const addComment = async (req, res) => {
     if (!savedComment) {
       throw new Error('Không thể lưu bình luận');
     }
+    // Tạo notification cho chủ post khi có comment mới (không phải comment của chính mình)
+    if (!parentId && itemType === 'post') {
+      const post = await Post.findById(itemId).populate('author', '_id');
+      if (post && post.author && post.author._id.toString() !== authorId) {
+        await createNotification({
+          user: post.author._id,
+          type: 'comment',
+          fromUser: authorId,
+          post: post._id,
+          comment: savedComment._id
+        });
+      }
+    }
+    // Tạo notification cho chủ comment khi có reply (không phải reply của chính mình)
+    if (parentId && itemType === 'post') {
+      const parentComment = await Comment.findById(parentId).populate('author', '_id');
+      if (parentComment && parentComment.author && parentComment.author._id.toString() !== authorId) {
+        await createNotification({
+          user: parentComment.author._id,
+          type: 'comment', // service sẽ tự phân loại thành 'reply'
+          fromUser: authorId,
+          post: itemId,
+          comment: savedComment._id,
+          parentComment: parentId
+        });
+      }
+    }
 
     const populatedComment = await Comment.findById(savedComment._id)
       .populate('author', 'username profilePicture fullname isVerified checkMark')
@@ -719,10 +747,27 @@ export const likePost = async (req, res) => {
       // Unlike
       post.likes = post.likes.filter(id => id.toString() !== userId);
       isLike = false;
+      // Xóa notification like khi unlike
+      if (post.author && post.author._id.toString() !== userId) {
+        await removeLikeNotification({
+          user: post.author._id,
+          fromUser: userId,
+          post: post._id
+        });
+      }
     } else {
       // Like
       post.likes = [...(post.likes || []), userId];
       isLike = true;
+      // Tạo thông báo khi like (không phải like của chính mình)
+      if (post.author && post.author._id.toString() !== userId) {
+        await createNotification({
+          user: post.author._id,
+          type: 'like',
+          fromUser: userId,
+          post: post._id
+        });
+      }
     }
     await post.save();
 

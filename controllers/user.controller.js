@@ -3,6 +3,7 @@ import cloudinary from '../config/cloudinary.config.js';
 import { uploadImage } from '../utils/cloudinaryUpload.js';
 import mongoose from 'mongoose';
 import { generateRandomUser, FAKE_USERS } from '../helper/buffAdmin.js';
+import { createNotification } from '../server/notification.service.js';
 
 // Your existing deleteUser function
 export const deleteUser = async (req, res) => {
@@ -349,6 +350,12 @@ export const toggleFollowUser = async (req, res) => {
       });
       message = `Đã theo dõi ${targetUser.username} thành công.`;
       actionStatus = 'followed';
+      // Tạo notification khi follow (không phải follow chính mình)
+      await createNotification({
+        user: targetUser._id,
+        type: 'follow',
+        fromUser: currentUserId
+      });
     }
 
     return res.status(200).json({
