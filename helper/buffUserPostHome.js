@@ -1,5 +1,4 @@
 import { generateRandomUser, FAKE_USERS } from './buffAdmin.js';
-import fetch from 'node-fetch';
 
 // Một số caption tiếng Việt tự nhiên
 const captions = [
@@ -15,7 +14,7 @@ const captions = [
   'Chỉ cần mỉm cười, mọi chuyện sẽ ổn.',
 ];
 
-// Danh sách ảnh dự phòng nếu Unsplash lỗi hoặc thiếu ảnh
+// Danh sách ảnh dự phòng
 const fallbackImages = [
   'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
   'https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=800&q=80',
@@ -29,76 +28,6 @@ const fallbackImages = [
   'https://images.pexels.com/photos/355465/pexels-photo-355465.jpeg?auto=compress&w=800&q=80',
 ];
 
-// Lấy ảnh động từ Unsplash API, fallback nếu lỗi hoặc thiếu ảnh
-async function fetchUnsplashImages(count = 10) {
-  const accessKey = process.env.UNSPLASH_ACCESS_KEY || 'YOUR_UNSPLASH_ACCESS_KEY';
-  const url = `https://api.unsplash.com/photos/random?count=${count}&client_id=${accessKey}`;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Failed to fetch Unsplash images');
-    const data = await res.json();
-    let images = Array.isArray(data)
-      ? data.map(img => img.urls?.regular || img.urls?.full || img.urls?.small)
-      : [];
-    // Nếu thiếu ảnh thì bổ sung từ fallback
-    if (images.length < count) {
-      const remain = count - images.length;
-      images = images.concat(fallbackImages.slice(0, remain));
-    }
-    // Nếu vẫn thiếu thì lặp lại fallback cho đủ
-    while (images.length < count) {
-      images.push(fallbackImages[Math.floor(Math.random() * fallbackImages.length)]);
-    }
-    return images;
-  } catch (err) {
-    console.error('Unsplash fetch error:', err);
-    // Fallback hoàn toàn nếu lỗi
-    let images = fallbackImages.slice(0, count);
-    while (images.length < count) {
-      images.push(fallbackImages[Math.floor(Math.random() * fallbackImages.length)]);
-    }
-    return images;
-  }
-}
-
-// Hàm lấy ảnh từ Pexels API
-async function fetchPexelsImages(count = 10) {
-  const apiKey = process.env.PEXELS_API_KEY || 'YOUR_PEXELS_API_KEY';
-  const url = `https://api.pexels.com/v1/curated?per_page=${count}`;
-  try {
-    const res = await fetch(url, {
-      headers: { Authorization: apiKey }
-    });
-    if (!res.ok) throw new Error('Failed to fetch Pexels images');
-    const data = await res.json();
-    let images = Array.isArray(data.photos)
-      ? data.photos.map(img => img.src?.large2x || img.src?.large || img.src?.original)
-      : [];
-    return images;
-  } catch (err) {
-    console.error('Pexels fetch error:', err);
-    return [];
-  }
-}
-
-// Hàm lấy ảnh từ Pixabay API
-async function fetchPixabayImages(count = 10) {
-  const apiKey = process.env.PIXABAY_API_KEY || 'YOUR_PIXABAY_API_KEY';
-  const url = `https://pixabay.com/api/?key=${apiKey}&per_page=${count}&image_type=photo&orientation=horizontal&safesearch=true`;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Failed to fetch Pixabay images');
-    const data = await res.json();
-    let images = Array.isArray(data.hits)
-      ? data.hits.map(img => img.largeImageURL || img.webformatURL)
-      : [];
-    return images;
-  } catch (err) {
-    console.error('Pixabay fetch error:', err);
-    return [];
-  }
-}
-
 // Hàm lấy ảnh từ Lorem Picsum (không cần API key, không giới hạn rate)
 function fetchPicsumImages(count = 10) {
   // Tạo danh sách URL ảnh random từ picsum.photos
@@ -110,18 +39,12 @@ function fetchPicsumImages(count = 10) {
   return images;
 }
 
-// Hàm lấy ảnh từ nhiều nguồn, lọc trùng
+// Hàm lấy ảnh từ nhiều nguồn, chỉ dùng fallback và picsum
 async function fetchMultiSourceImages(count = 50) {
-  // Lấy từ Unsplash, Pexels, Pixabay (có thể mở rộng thêm)
-  const [unsplash, pexels, pixabay] = await Promise.all([
-    fetchUnsplashImages(count),
-    fetchPexelsImages(count),
-    fetchPixabayImages(count)
-  ]);
   // Lấy thêm từ Lorem Picsum (không cần API key, không bị rate limit)
   const picsum = fetchPicsumImages(count);
   // Gộp và lọc trùng
-  const all = [...unsplash, ...pexels, ...pixabay, ...picsum, ...fallbackImages];
+  const all = [...picsum, ...fallbackImages];
   // Lọc trùng URL
   const unique = Array.from(new Set(all.filter(Boolean)));
   // Trả về đúng số lượng cần
