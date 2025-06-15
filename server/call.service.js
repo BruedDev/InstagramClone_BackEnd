@@ -1,8 +1,17 @@
+import User from '../models/user.model.js';
+
 export const handleCall = (socket, io, onlineUsers) => {
   // Khi user gọi cho người khác
-  socket.on('callUser', ({ callerId, calleeId, callType }) => {
-    // Gửi sự kiện "incomingCall" cho người nhận (callee)
-    io.to(calleeId).emit('incomingCall', { callerId, callType });
+  socket.on('callUser', async ({ callerId, calleeId, callType }) => {
+    // Lấy thông tin user gọi
+    const caller = await User.findById(callerId).select('username fullName profilePicture');
+    // Gửi sự kiện "incomingCall" cho người nhận (callee) kèm username
+    io.to(calleeId).emit('incomingCall', {
+      callerId,
+      callType,
+      callerName: caller?.username || 'Người lạ',
+      callerProfilePicture: caller?.profilePicture || '',
+    });
   });
 
   // Khi người nhận đồng ý cuộc gọi
