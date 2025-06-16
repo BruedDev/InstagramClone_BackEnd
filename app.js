@@ -7,6 +7,9 @@ import routes from './routes/index.routes.js';
 import { initSocket } from './middlewares/socket.middleware.js';
 import cron from 'node-cron';
 import { archiveExpiredStories } from './helper/ScanStory.js';
+import compression from './middlewares/compression.middleware.js';
+import helmet from './middlewares/helmet.middleware.js';
+import cache from './middlewares/cache.middleware.js';
 
 dotenv.config();
 
@@ -21,6 +24,9 @@ connectDB();
 
 // Áp dụng middleware
 applyMiddlewares(app);
+app.use(helmet());
+app.use(compression());
+app.use(cache('2 minutes'));
 
 // Chỉ parse JSON cho các method có body
 app.use((req, res, next) => {
