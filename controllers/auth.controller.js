@@ -33,11 +33,10 @@ export const login = async (req, res) => {
     user.lastActive = new Date();
     await user.save();
 
-    // Tạo JWT token
+    // Tạo JWT token vĩnh viễn (không hết hạn)
     const token = jwt.sign(
       { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
+      process.env.JWT_SECRET
     );
 
     // Thêm vào onlineUsers và broadcast status
@@ -52,12 +51,11 @@ export const login = async (req, res) => {
       });
     }
 
-    // Cài đặt cookie bảo mật
+    // Cài đặt cookie vĩnh viễn
     const cookieOptions = {
       httpOnly: true,
       secure: true,
       sameSite: 'None',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
       path: '/'
     };
 
@@ -145,18 +143,17 @@ export const register = async (req, res) => {
       fullName,
       email,
       phoneNumber,
-      password, // Lưu ý: Password sẽ được hash trong schema thông qua pre-save middleware
+      password,
       authType: 'local'
     });
 
     // Lưu user vào database
     await newUser.save();
 
-    // Tạo JWT token
+    // Tạo JWT token vĩnh viễn (không hết hạn)
     const token = jwt.sign(
       { id: newUser._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
+      process.env.JWT_SECRET
     );
 
     // Return response
@@ -234,30 +231,9 @@ export const checkAuth = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
 
-    // Cập nhật token để gia hạn nếu cần
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    // Làm mới cookie
-    const cookieOptions = {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'None',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-      path: '/'
-    };
-
-    // Set cookie mới
-    res.cookie('token', token, cookieOptions);
-
     res.status(200).json({
       success: true,
-      user,
-      token, // Thêm token để frontend lưu nếu cần
-      cookieSet: true
+      user
     });
   } catch (error) {
     res.status(500).json({
@@ -323,7 +299,7 @@ export const googleAuth = async (req, res) => {
         username,
         fullName: name,
         email,
-        password, // Sẽ được hash tự động bởi pre-save middleware
+        password,
         profilePicture: picture || undefined,
         authType: 'google'
       });
@@ -339,19 +315,17 @@ export const googleAuth = async (req, res) => {
       await user.save();
     }
 
-    // Tạo JWT token
+    // Tạo JWT token vĩnh viễn (không hết hạn)
     const token = jwt.sign(
       { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
+      process.env.JWT_SECRET
     );
 
-    // Cài đặt cookie bảo mật
+    // Cài đặt cookie vĩnh viễn
     const cookieOptions = {
       httpOnly: true,
       secure: true,
       sameSite: 'None',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 ngày
       path: '/'
     };
 
