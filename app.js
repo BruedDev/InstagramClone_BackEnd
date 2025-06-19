@@ -26,7 +26,8 @@ connectDB();
 applyMiddlewares(app);
 app.use(helmet());
 app.use(compression());
-app.use(cache('2 minutes'));
+// app.use(cache('2 minutes'));
+// Đã tắt cache toàn cục để các route luôn trả về dữ liệu mới nhất
 
 // Chỉ parse JSON cho các method có body
 app.use((req, res, next) => {

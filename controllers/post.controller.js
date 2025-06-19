@@ -24,6 +24,15 @@ export const createPost = async (req, res) => {
     const { caption, desc, type } = req.body;
     const authorId = req.user.id;
 
+    // VALIDATION: Kiểm tra user có tồn tại không
+    const currentUser = await User.findById(authorId);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng'
+      });
+    }
+
     if (!req.file) {
       return res
         .status(400)
@@ -46,18 +55,19 @@ export const createPost = async (req, res) => {
       result = await uploadVideo(req.file.path, 'reels');
     }
 
+    // SECURITY: Chỉ sử dụng authorId từ token, không cho phép override
     const newPost = new Post({
       caption,
       desc,
       fileUrl: result.secure_url,
       filePublicId: result.public_id,
       type,
-      author: authorId,
+      author: authorId, // Luôn luôn là user đang đăng nhập
     });
 
     await newPost.save();
 
-    // Chỉ thêm vào mảng posts nếu là ảnh
+    // Chỉ thêm vào mảng posts của chính user đó nếu là ảnh
     if (type === 'image') {
       await User.findByIdAndUpdate(authorId, { $push: { posts: newPost._id } });
     }
@@ -70,6 +80,160 @@ export const createPost = async (req, res) => {
   } catch (error) {
     console.error('Lỗi khi tạo bài viết:', error);
     res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
+};
+
+// Xóa bài viết theo ID
+export const deletePostById = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const currentUserId = req.user.id;
+
+    // VALIDATION: Kiểm tra user hiện tại có tồn tại không
+    const currentUser = await User.findById(currentUserId);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng hiện tại'
+      });
+    }
+
+    // Tìm bài viết và populate author để kiểm tra
+    const post = await Post.findById(postId).populate('author', '_id username');
+    if (!post) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'Không tìm thấy bài viết' });
+    }
+
+    // SECURITY: Chỉ cho phép tác giả thật sự xóa bài viết của chính mình
+    if (post.author._id.toString() !== currentUserId) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: 'Bạn chỉ có thể xóa bài viết của chính mình',
+        });
+    }
+
+    // DOUBLE CHECK: Đảm bảo user hiện tại và author của post là cùng 1 người
+    if (currentUser._id.toString() !== post.author._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Không có quyền xóa bài viết này'
+      });
+    }
+
+    // Xóa file khỏi Cloudinary nếu có publicId
+    if (post.filePublicId) {
+      try {
+        await cloudinary.v2.uploader.destroy(post.filePublicId);
+      } catch (cloudinaryError) {
+        console.error('Lỗi khi xóa file từ Cloudinary:', cloudinaryError);
+        // Vẫn tiếp tục xóa post từ DB ngay cả khi xóa file thất bại
+      }
+    }
+
+    // Xóa post khỏi DB
+    await post.deleteOne();
+
+    // Cập nhật lại danh sách post trong user (chỉ xóa khỏi user thật sự sở hữu)
+    await User.findByIdAndUpdate(currentUserId, { $pull: { posts: postId } });
+
+    res.status(200).json({ success: true, message: 'Xóa bài viết thành công' });
+  } catch (error) {
+    console.error('Lỗi khi xóa bài viết:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
+};
+
+// Cập nhật bài viết (nếu có function này)
+export const updatePost = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const currentUserId = req.user.id;
+    const { caption, desc } = req.body;
+
+    // VALIDATION: Kiểm tra user hiện tại
+    const currentUser = await User.findById(currentUserId);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng hiện tại'
+      });
+    }
+
+    // Tìm bài viết
+    const post = await Post.findById(postId).populate('author', '_id username');
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy bài viết'
+      });
+    }
+
+    // SECURITY: Chỉ cho phép tác giả thật sự cập nhật bài viết của chính mình
+    if (post.author._id.toString() !== currentUserId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bạn chỉ có thể cập nhật bài viết của chính mình',
+      });
+    }
+
+    // DOUBLE CHECK
+    if (currentUser._id.toString() !== post.author._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Không có quyền cập nhật bài viết này'
+      });
+    }
+
+    // Cập nhật bài viết
+    const updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      {
+        caption: caption || post.caption,
+        desc: desc || post.desc,
+        updatedAt: new Date()
+      },
+      { new: true }
+    ).populate('author', 'username profilePicture fullname checkMark');
+
+    res.status(200).json({
+      success: true,
+      message: 'Cập nhật bài viết thành công',
+      post: updatedPost
+    });
+
+  } catch (error) {
+    console.error('Lỗi khi cập nhật bài viết:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
+};
+
+export const authenticateUser = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'Token không tồn tại' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User không tồn tại' });
+    }
+
+    req.user = {
+      id: user._id.toString(),
+      username: user.username,
+      email: user.email
+    };
+
+    next();
+  } catch (error) {
+    res.status(401).json({ success: false, message: 'Token không hợp lệ' });
   }
 };
 
@@ -295,47 +459,6 @@ export const getPostById = async (req, res) => {
   }
 };
 
-// Xóa bài viết theo ID
-export const deletePostById = async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const userId = req.user.id;
-
-    const post = await Post.findById(postId);
-
-    if (!post) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'Không tìm thấy bài viết' });
-    }
-
-    // Chỉ cho phép tác giả xóa bài viết của mình
-    if (post.author.toString() !== userId) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: 'Bạn không có quyền xóa bài viết này',
-        });
-    }
-
-    // Xóa ảnh khỏi Cloudinary nếu có publicId
-    if (post.filePublicId) {
-      await cloudinary.v2.uploader.destroy(post.filePublicId);
-    }
-
-    // Xóa post khỏi DB
-    await post.deleteOne();
-
-    // Cập nhật lại danh sách post trong user
-    await User.findByIdAndUpdate(userId, { $pull: { posts: postId } });
-
-    res.status(200).json({ success: true, message: 'Xóa bài viết thành công' });
-  } catch (error) {
-    console.error('Lỗi khi xóa bài viết:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
-  }
-};
 
 // Controller để thêm comment vào post hoặc reel (hoặc video nếu có xử lý)
 export const addComment = async (req, res) => {
