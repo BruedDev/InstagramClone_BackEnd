@@ -7,19 +7,31 @@ import {
   createCommentForPost,
   createCommentForReel,
   createReplyForComment,
-} from '../server/comment.server.js';
+} from '../server/comment.service.js';
 import {
   generateRandomUser,
   generateRandomComment,
   generateNestedComments,
   generateBuffedMetrics
 } from '../helper/buffAdmin.js';
+import cloudinary from 'cloudinary';
+import { createNotification, removeLikeNotification } from '../server/notification.service.js';
+
 
 // Đăng bài viết (ảnh hoặc video)
 export const createPost = async (req, res) => {
   try {
     const { caption, desc, type } = req.body;
     const authorId = req.user.id;
+
+    // VALIDATION: Kiểm tra user có tồn tại không
+    const currentUser = await User.findById(authorId);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng'
+      });
+    }
 
     if (!req.file) {
       return res
@@ -43,18 +55,19 @@ export const createPost = async (req, res) => {
       result = await uploadVideo(req.file.path, 'reels');
     }
 
+    // SECURITY: Chỉ sử dụng authorId từ token, không cho phép override
     const newPost = new Post({
       caption,
       desc,
       fileUrl: result.secure_url,
       filePublicId: result.public_id,
       type,
-      author: authorId,
+      author: authorId, // Luôn luôn là user đang đăng nhập
     });
 
     await newPost.save();
 
-    // Chỉ thêm vào mảng posts nếu là ảnh
+    // Chỉ thêm vào mảng posts của chính user đó nếu là ảnh
     if (type === 'image') {
       await User.findByIdAndUpdate(authorId, { $push: { posts: newPost._id } });
     }
@@ -67,6 +80,160 @@ export const createPost = async (req, res) => {
   } catch (error) {
     console.error('Lỗi khi tạo bài viết:', error);
     res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
+};
+
+// Xóa bài viết theo ID
+export const deletePostById = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const currentUserId = req.user.id;
+
+    // VALIDATION: Kiểm tra user hiện tại có tồn tại không
+    const currentUser = await User.findById(currentUserId);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng hiện tại'
+      });
+    }
+
+    // Tìm bài viết và populate author để kiểm tra
+    const post = await Post.findById(postId).populate('author', '_id username');
+    if (!post) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'Không tìm thấy bài viết' });
+    }
+
+    // SECURITY: Chỉ cho phép tác giả thật sự xóa bài viết của chính mình
+    if (post.author._id.toString() !== currentUserId) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: 'Bạn chỉ có thể xóa bài viết của chính mình',
+        });
+    }
+
+    // DOUBLE CHECK: Đảm bảo user hiện tại và author của post là cùng 1 người
+    if (currentUser._id.toString() !== post.author._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Không có quyền xóa bài viết này'
+      });
+    }
+
+    // Xóa file khỏi Cloudinary nếu có publicId
+    if (post.filePublicId) {
+      try {
+        await cloudinary.v2.uploader.destroy(post.filePublicId);
+      } catch (cloudinaryError) {
+        console.error('Lỗi khi xóa file từ Cloudinary:', cloudinaryError);
+        // Vẫn tiếp tục xóa post từ DB ngay cả khi xóa file thất bại
+      }
+    }
+
+    // Xóa post khỏi DB
+    await post.deleteOne();
+
+    // Cập nhật lại danh sách post trong user (chỉ xóa khỏi user thật sự sở hữu)
+    await User.findByIdAndUpdate(currentUserId, { $pull: { posts: postId } });
+
+    res.status(200).json({ success: true, message: 'Xóa bài viết thành công' });
+  } catch (error) {
+    console.error('Lỗi khi xóa bài viết:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
+};
+
+// Cập nhật bài viết (nếu có function này)
+export const updatePost = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const currentUserId = req.user.id;
+    const { caption, desc } = req.body;
+
+    // VALIDATION: Kiểm tra user hiện tại
+    const currentUser = await User.findById(currentUserId);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng hiện tại'
+      });
+    }
+
+    // Tìm bài viết
+    const post = await Post.findById(postId).populate('author', '_id username');
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy bài viết'
+      });
+    }
+
+    // SECURITY: Chỉ cho phép tác giả thật sự cập nhật bài viết của chính mình
+    if (post.author._id.toString() !== currentUserId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bạn chỉ có thể cập nhật bài viết của chính mình',
+      });
+    }
+
+    // DOUBLE CHECK
+    if (currentUser._id.toString() !== post.author._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Không có quyền cập nhật bài viết này'
+      });
+    }
+
+    // Cập nhật bài viết
+    const updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      {
+        caption: caption || post.caption,
+        desc: desc || post.desc,
+        updatedAt: new Date()
+      },
+      { new: true }
+    ).populate('author', 'username profilePicture fullname checkMark');
+
+    res.status(200).json({
+      success: true,
+      message: 'Cập nhật bài viết thành công',
+      post: updatedPost
+    });
+
+  } catch (error) {
+    console.error('Lỗi khi cập nhật bài viết:', error);
+    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
+  }
+};
+
+export const authenticateUser = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'Token không tồn tại' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User không tồn tại' });
+    }
+
+    req.user = {
+      id: user._id.toString(),
+      username: user.username,
+      email: user.email
+    };
+
+    next();
+  } catch (error) {
+    res.status(401).json({ success: false, message: 'Token không hợp lệ' });
   }
 };
 
@@ -292,44 +459,6 @@ export const getPostById = async (req, res) => {
   }
 };
 
-// Xóa bài viết theo ID
-export const deletePostById = async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const userId = req.user.id;
-
-    const post = await Post.findById(postId);
-
-    if (!post) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'Không tìm thấy bài viết' });
-    }
-
-    // Chỉ cho phép tác giả xóa bài viết của mình
-    if (post.author.toString() !== userId) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: 'Bạn không có quyền xóa bài viết này',
-        });
-    }
-
-    // Nếu bạn dùng Cloudinary, bạn có thể xóa file tại đây bằng publicId:
-    // await cloudinary.uploader.destroy(post.filePublicId);
-
-    await post.deleteOne();
-
-    // Cập nhật lại mảng posts của user (loại bỏ postId vừa xóa)
-    await User.findByIdAndUpdate(userId, { $pull: { posts: postId } });
-
-    res.status(200).json({ success: true, message: 'Xóa bài viết thành công' });
-  } catch (error) {
-    console.error('Lỗi khi xóa bài viết:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
-  }
-};
 
 // Controller để thêm comment vào post hoặc reel (hoặc video nếu có xử lý)
 export const addComment = async (req, res) => {
@@ -417,9 +546,36 @@ export const addComment = async (req, res) => {
     if (!savedComment) {
       throw new Error('Không thể lưu bình luận');
     }
+    // Tạo notification cho chủ post khi có comment mới (không phải comment của chính mình)
+    if (!parentId && itemType === 'post') {
+      const post = await Post.findById(itemId).populate('author', '_id');
+      if (post && post.author && post.author._id.toString() !== authorId) {
+        await createNotification({
+          user: post.author._id,
+          type: 'comment',
+          fromUser: authorId,
+          post: post._id,
+          comment: savedComment._id
+        });
+      }
+    }
+    // Tạo notification cho chủ comment khi có reply (không phải reply của chính mình)
+    if (parentId && itemType === 'post') {
+      const parentComment = await Comment.findById(parentId).populate('author', '_id');
+      if (parentComment && parentComment.author && parentComment.author._id.toString() !== authorId) {
+        await createNotification({
+          user: parentComment.author._id,
+          type: 'comment', // service sẽ tự phân loại thành 'reply'
+          fromUser: authorId,
+          post: itemId,
+          comment: savedComment._id,
+          parentComment: parentId
+        });
+      }
+    }
 
     const populatedComment = await Comment.findById(savedComment._id)
-      .populate('author', 'username profilePicture fullname isVerified')
+      .populate('author', 'username profilePicture fullname isVerified checkMark')
       .lean();
 
     res.status(201).json({
@@ -657,14 +813,28 @@ export const getCommentsForItem = async (req, res) => {
       };
     }
 
-    // Add ownership flags
+    // Add ownership flags and checkMark to author (recursive for replies)
+    function addCheckMarkToReplies(replies) {
+      if (!Array.isArray(replies)) return [];
+      return replies.map(reply => ({
+        ...reply,
+        isOwnComment: reply.author?._id?.toString() === loggedInUserId,
+        author: {
+          ...reply.author,
+          checkMark: reply.author?.username === 'vanloc19_6' ? true : (reply.author?.checkMark || false)
+        },
+        replies: addCheckMarkToReplies(reply.replies)
+      }));
+    }
+
     const commentsWithOwnership = comments.map(comment => ({
       ...comment,
-      isOwnComment: comment.author?._id.toString() === loggedInUserId,
-      replies: comment.replies?.map(reply => ({
-        ...reply,
-        isOwnComment: reply.author?._id.toString() === loggedInUserId
-      }))
+      isOwnComment: comment.author?._id?.toString() === loggedInUserId,
+      author: {
+        ...comment.author,
+        checkMark: comment.author?.username === 'vanloc19_6' ? true : (comment.author?.checkMark || false)
+      },
+      replies: addCheckMarkToReplies(comment.replies)
     }));
 
     res.status(200).json({
@@ -700,10 +870,27 @@ export const likePost = async (req, res) => {
       // Unlike
       post.likes = post.likes.filter(id => id.toString() !== userId);
       isLike = false;
+      // Xóa notification like khi unlike
+      if (post.author && post.author._id.toString() !== userId) {
+        await removeLikeNotification({
+          user: post.author._id,
+          fromUser: userId,
+          post: post._id
+        });
+      }
     } else {
       // Like
       post.likes = [...(post.likes || []), userId];
       isLike = true;
+      // Tạo thông báo khi like (không phải like của chính mình)
+      if (post.author && post.author._id.toString() !== userId) {
+        await createNotification({
+          user: post.author._id,
+          type: 'like',
+          fromUser: userId,
+          post: post._id
+        });
+      }
     }
     await post.save();
 
@@ -741,89 +928,4 @@ const sortRepliesRecursively = (replies) => {
   });
 };
 
-export const getPostHome = async (req, res) => {
-  try {
-    let posts = await Post.find()
-      .populate('author', 'username profilePicture fullName checkMark')
-      .sort({ createdAt: -1 })
-      .lean();
 
-    const loggedInUserId = req.user?.id;
-    // Process posts with buffed data for vanloc19_6
-    const processedPosts = await Promise.all(posts.map(async post => {
-      const likesArr = Array.isArray(post.likes) ? post.likes.map(id => id?.toString()) : [];
-      let isLike = false;
-      if (loggedInUserId && likesArr.length > 0) {
-        isLike = likesArr.includes(loggedInUserId.toString());
-      }
-      if (post.author.username === 'vanloc19_6') {
-        // Nếu chưa có buffedLikes thì random 1 lần và lưu vào DB
-        let buffedLikes = post.buffedLikes;
-        if (typeof buffedLikes !== 'number') {
-          buffedLikes = 200000 + Math.floor(Math.random() * 300000);
-          await Post.findByIdAndUpdate(post._id, { buffedLikes });
-        }
-        // Nếu chưa có buffedCommentCount và buffedReplyCount thì random 1 lần và lưu vào DB
-        let buffedCommentCount = post.buffedCommentCount;
-        let buffedReplyCount = post.buffedReplyCount;
-        let updateObj = {};
-        if (typeof buffedCommentCount !== 'number') {
-          buffedCommentCount = Math.floor(Math.random() * 100000) + 200000;
-          updateObj.buffedCommentCount = buffedCommentCount;
-        }
-        if (typeof buffedReplyCount !== 'number') {
-          buffedReplyCount = Math.floor(Math.random() * 50000) + 100000;
-          updateObj.buffedReplyCount = buffedReplyCount;
-        }
-        if (Object.keys(updateObj).length > 0) {
-          await Post.findByIdAndUpdate(post._id, updateObj);
-        }
-        const totalLikes = (buffedLikes || 0) + likesArr.length;
-        const totalComments = (buffedCommentCount || 0) + (buffedReplyCount || 0);
-        return {
-          ...post,
-          likes: totalLikes,
-          realLikes: likesArr.length,
-          isBuffed: true,
-          buffedLikes: buffedLikes,
-          commentCount: buffedCommentCount,
-          replyCount: buffedReplyCount,
-          totalComments: totalComments,
-          totalLikes: totalLikes,
-          engagement: {
-            likes: totalLikes,
-            comments: totalComments,
-            total: totalLikes + totalComments
-          },
-          isLike: isLike
-        };
-      }
-      // For normal users
-      return {
-        ...post,
-        likes: likesArr.length,
-        isBuffed: false,
-        commentCount,
-        replyCount,
-        totalComments: commentCount + replyCount,
-        totalLikes: likesArr.length,
-        engagement: {
-          likes: likesArr.length,
-          comments: commentCount + replyCount,
-          total: likesArr.length + commentCount + replyCount
-        },
-        isLike: !!isLike
-      };
-    }));
-
-    res.status(200).json({
-      success: true,
-      posts: processedPosts,
-      isBuffedUser: user.username === 'vanloc19_6'
-    });
-
-  } catch (error) {
-    console.error('Lỗi khi lấy bài viết người dùng:', error);
-    res.status(500).json({ success: false, message: 'Lỗi máy chủ' });
-  }
-};

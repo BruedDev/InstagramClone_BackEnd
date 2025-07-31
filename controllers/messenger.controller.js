@@ -1,30 +1,83 @@
 import Message from '../models/messenger.model.js';
 import User from '../models/user.model.js';
 import { getIO } from '../middlewares/socket.middleware.js';
+import { uploadImage, uploadVideo } from '../utils/cloudinaryUpload.js';
+import { v2 as cloudinary } from 'cloudinary';
 
-// Gửi tin nhắn (bạn đã viết rồi)
+// Gửi tin nhắn (hỗ trợ gửi media)
 export const sendMessage = async (req, res) => {
   try {
-    const { receiverId, message } = req.body;
+    const { receiverId, message, replyTo } = req.body;
     const senderId = req.user._id;
+    let mediaUrl = null;
+    let mediaType = null;
 
-    if (!receiverId || !message) {
-      return res.status(400).json({ message: 'receiverId và message là bắt buộc' });
+    // Xử lý file upload nếu có
+    if (req.file) {
+      if (req.file.mimetype.startsWith('image/')) {
+        const result = await uploadImage(req.file.path, 'messenger/images');
+        mediaUrl = result.secure_url;
+        mediaType = 'image';
+      } else if (req.file.mimetype.startsWith('video/')) {
+        const result = await uploadVideo(req.file.path, 'messenger/videos');
+        mediaUrl = result.secure_url;
+        mediaType = 'video';
+      }
+    }
+
+    if (!receiverId || (!message && !mediaUrl)) {
+      return res.status(400).json({ message: 'receiverId và message hoặc media là bắt buộc' });
+    }
+
+    // Kiểm tra tin nhắn được reply có tồn tại không (nếu có replyTo)
+    let parentMessage = null;
+    if (replyTo) {
+      parentMessage = await Message.findById(replyTo)
+        .populate('senderId', 'username fullName')
+        .populate('receiverId', 'username fullName');
+
+      if (!parentMessage) {
+        return res.status(400).json({ message: 'Tin nhắn được reply không tồn tại' });
+      }
+    }
+
+    // Xác định rõ ràng replyTo là trả lời tin nhắn của chính mình hay của người khác
+    let replyType = null;
+    if (parentMessage) {
+      if (parentMessage.senderId.toString() === senderId.toString()) {
+        replyType = "self"; // Trả lời tin nhắn của chính mình
+      } else {
+        replyType = "other"; // Trả lời tin nhắn của người khác
+      }
     }
 
     const newMessage = new Message({
       senderId,
       receiverId,
       message,
+      replyTo: parentMessage ? parentMessage._id : undefined,
+      mediaUrl,
+      mediaType,
+      replyType // Thêm trường này để FE biết rõ loại reply
     });
 
     const savedMessage = await newMessage.save();
 
-    const author = await User.findById(senderId).select('username fullName checkMark');
+    // Populate để lấy thông tin đầy đủ
+    const populatedMessage = await Message.findById(savedMessage._id)
+      .populate('senderId', 'username fullName checkMark')
+      .populate('receiverId', 'username fullName')
+      .populate({
+        path: 'replyTo',
+        populate: {
+          path: 'senderId',
+          select: 'username fullName'
+        }
+      });
 
+    // Đưa replyType vào response
     return res.status(201).json({
-      message: savedMessage,
-      author: author || null,
+      message: { ...populatedMessage.toObject(), replyType }
     });
   } catch (error) {
     console.error('Lỗi gửi tin nhắn:', error);
@@ -32,14 +85,14 @@ export const sendMessage = async (req, res) => {
   }
 };
 
-// Phiên bản cải thiện của getMessages - lấy toàn bộ cuộc hội thoại
+// lấy tin nhắn giữa 2 người dùng
 export const getMessages = async (req, res) => {
   try {
     const userId1 = req.user._id.toString();
     const userId2 = req.params.userId;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50; // Tăng limit lên 50
-    const loadAll = req.query.loadAll === 'true'; // Tham số để load tất cả
+    const limit = parseInt(req.query.limit) || 50;
+    const loadAll = req.query.loadAll === 'true';
 
     if (!userId2) {
       return res.status(400).json({ message: 'userId là bắt buộc' });
@@ -49,25 +102,33 @@ export const getMessages = async (req, res) => {
     let totalMessages = 0;
     let hasMore = false;
 
+    const populateOptions = [
+      { path: 'senderId', select: '_id username fullName profilePicture checkMark' },
+      { path: 'receiverId', select: '_id username fullName profilePicture checkMark' },
+      {
+        path: 'replyTo',
+        populate: {
+          path: 'senderId',
+          select: 'username fullName'
+        }
+      }
+    ];
+
     if (loadAll) {
-      // Lấy tất cả tin nhắn giữa 2 người
       messages = await Message.find({
         $or: [
           { senderId: userId1, receiverId: userId2 },
           { senderId: userId2, receiverId: userId1 },
         ],
       })
-        .populate('senderId', '_id username fullName profilePicture checkMark')
-        .populate('receiverId', '_id username fullName profilePicture checkMark')
-        .sort({ createdAt: 1 }) // Sắp xếp từ cũ đến mới
-        .lean(); // Sử dụng lean() để tăng performance
+        .populate(populateOptions)
+        .sort({ createdAt: 1 })
+        .lean();
 
       totalMessages = messages.length;
     } else {
-      // Lấy tin nhắn theo phân trang (cho infinite scroll)
       const skip = (page - 1) * limit;
 
-      // Đếm tổng số tin nhắn
       totalMessages = await Message.countDocuments({
         $or: [
           { senderId: userId1, receiverId: userId2 },
@@ -81,17 +142,13 @@ export const getMessages = async (req, res) => {
           { senderId: userId2, receiverId: userId1 },
         ],
       })
-        .populate('senderId', '_id username fullName profilePicture checkMark')
-        .populate('receiverId', '_id username fullName profilePicture checkMark')
-        .sort({ createdAt: -1 }) // Mới nhất trước để phân trang
+        .populate(populateOptions)
+        .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean();
 
-      // Đảo ngược để hiển thị từ cũ đến mới
       messages.reverse();
-
-      // Kiểm tra còn tin nhắn để load không
       hasMore = skip + limit < totalMessages;
     }
 
@@ -110,7 +167,6 @@ export const getMessages = async (req, res) => {
         { isRead: true }
       );
 
-      // Emit socket event để cập nhật trạng thái real-time
       const io = getIO();
       if (io) {
         io.to(userId2).emit('messagesRead', {
@@ -121,16 +177,38 @@ export const getMessages = async (req, res) => {
     }
 
     // Format response data
-    const formattedMessages = messages.map(msg => ({
-      _id: msg._id,
-      senderId: msg.senderId,
-      receiverId: msg.receiverId,
-      message: msg.message,
-      isRead: unreadMessageIds.includes(msg._id.toString()) ? true : msg.isRead,
-      createdAt: msg.createdAt,
-      updatedAt: msg.updatedAt,
-      isOwnMessage: msg.senderId._id.toString() === userId1
-    }));
+    const formattedMessages = messages.map(msg => {
+      // Xác định rõ ràng replyType cho từng message
+      let replyType = null;
+      let replyToWithType = null;
+      if (msg.replyTo && typeof msg.replyTo === 'object' && msg.replyTo.senderId) {
+        // Nếu senderId là object, lấy _id, nếu là string thì dùng luôn
+        const replySenderId = typeof msg.replyTo.senderId === 'object' ? msg.replyTo.senderId._id : msg.replyTo.senderId;
+        if (replySenderId && replySenderId.toString() === msg.senderId._id.toString()) {
+          replyType = 'self';
+        } else {
+          replyType = 'other';
+        }
+        // Gắn replyType vào replyTo object để FE phân biệt
+        replyToWithType = { ...msg.replyTo, replyType };
+      } else {
+        replyToWithType = msg.replyTo || null;
+      }
+      return {
+        _id: msg._id,
+        senderId: msg.senderId,
+        receiverId: msg.receiverId,
+        message: msg.message,
+        mediaUrl: msg.mediaUrl,
+        mediaType: msg.mediaType,
+        replyTo: replyToWithType,
+        isRead: unreadMessageIds.includes(msg._id.toString()) ? true : msg.isRead,
+        createdAt: msg.createdAt,
+        updatedAt: msg.updatedAt,
+        isOwnMessage: msg.senderId._id.toString() === userId1,
+        replyType // Thêm trường này vào mỗi message (nếu cần tổng thể)
+      };
+    });
 
     return res.status(200).json({
       messages: formattedMessages,
@@ -149,7 +227,7 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// Thêm hàm mới để lấy tin nhắn với infinite scroll
+// cuộn để lấy tin nhắn với phân trang
 export const getMessagesWithPagination = async (req, res) => {
   try {
     const userId1 = req.user._id.toString();
@@ -205,30 +283,6 @@ export const getMessagesWithPagination = async (req, res) => {
   }
 };
 
-// // Lấy danh sách ID tất cả user (để nhắn tin với bất kỳ ai)
-// export const getUserMessages = async (req, res) => {
-//   try {
-//     // Lấy tất cả user trong hệ thống (trừ chính mình)
-//     const userId = req.user._id.toString();
-
-//     const users = await User.find({ _id: { $ne: userId } })
-//       .select('_id username profilePicture checkMark');
-
-//     // Đảm bảo luôn trả về checkMark true/false
-//     const usersWithCheckMark = users.map(u => ({
-//       _id: u._id,
-//       username: u.username,
-//       profilePicture: u.profilePicture,
-//       checkMark: !!u.checkMark
-//     }));
-
-//     return res.status(200).json(usersWithCheckMark);
-//   } catch (error) {
-//     console.error('Lỗi lấy danh sách user:', error);
-//     return res.status(500).json({ message: 'Lỗi server khi lấy danh sách user' });
-//   }
-// };
-
 // Lấy số lượng tin nhắn chưa đọc
 export const getUnreadCount = async (req, res) => {
   try {
@@ -266,6 +320,7 @@ export const getUnreadCount = async (req, res) => {
   }
 };
 
+// trạng thái online/ offline của người dùng
 export const checkUserStatus = async (req, res) => {
   try {
     const { identifier } = req.params;
@@ -315,7 +370,7 @@ export const checkUserStatus = async (req, res) => {
   }
 };
 
-// Cập nhật getUserMessages để trả về thêm thông tin thời gian
+// lấy danh sách người dùng để nhắn tin
 export const getUserMessages = async (req, res) => {
   try {
     const userId = req.user._id.toString();
@@ -442,7 +497,7 @@ export const getRecentChats = async (req, res) => {
   }
 };
 
-// Thêm controller mới để đánh dấu tin nhắn đã đọc
+// đánh dấu tin nhắn đã đọc
 export const markMessagesAsRead = async (req, res) => {
   try {
     const { messageIds, senderId } = req.body;
@@ -510,5 +565,49 @@ export const markMessagesAsRead = async (req, res) => {
     return res.status(500).json({
       message: 'Lỗi server khi đánh dấu tin nhắn đã đọc'
     });
+  }
+};
+
+// Xóa tất cả tin nhắn giữa 2 user (bao gồm cả media trên Cloudinary)
+export const deleteMessagesBetweenUsers = async (req, res) => {
+  try {
+    const userId1 = req.user._id.toString();
+    const userId2 = req.params.userId;
+    if (!userId2) {
+      return res.status(400).json({ message: 'userId là bắt buộc' });
+    }
+    // Lấy tất cả tin nhắn giữa 2 user
+    const messages = await Message.find({
+      $or: [
+        { senderId: userId1, receiverId: userId2 },
+        { senderId: userId2, receiverId: userId1 },
+      ],
+    });
+    // Xóa media trên Cloudinary nếu có
+    for (const msg of messages) {
+      if (msg.mediaUrl) {
+        // Lấy public_id từ url cloudinary
+        const match = msg.mediaUrl.match(/\/([^\/]+)\.(jpg|jpeg|png|mp4|webp|gif)$/i);
+        if (match) {
+          const publicId = msg.mediaUrl.split('/').slice(-2).join('/').replace(/\.(jpg|jpeg|png|mp4|webp|gif)$/i, '');
+          try {
+            await cloudinary.uploader.destroy(publicId, { resource_type: msg.mediaType === 'video' ? 'video' : 'image' });
+          } catch (err) {
+            console.error('Lỗi xóa media Cloudinary:', err);
+          }
+        }
+      }
+    }
+    // Xóa tin nhắn trong MongoDB
+    await Message.deleteMany({
+      $or: [
+        { senderId: userId1, receiverId: userId2 },
+        { senderId: userId2, receiverId: userId1 },
+      ],
+    });
+    return res.status(200).json({ success: true, message: 'Đã xóa toàn bộ tin nhắn giữa 2 người dùng' });
+  } catch (error) {
+    console.error('Lỗi khi xóa tin nhắn giữa 2 user:', error);
+    return res.status(500).json({ message: 'Lỗi server khi xóa tin nhắn' });
   }
 };

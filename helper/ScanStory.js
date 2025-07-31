@@ -1,4 +1,6 @@
 import Story from '../models/story.model.js';
+import ArchivedStorie from '../models/archivedStory.model.js';
+import User from '../models/user.model.js';
 
 // Archive story after expiration (scheduled job) - đã cập nhật để xử lý audio
 export const archiveExpiredStories = async () => {
@@ -7,33 +9,39 @@ export const archiveExpiredStories = async () => {
     const expiredStories = await Story.find({
       expiresAt: { $lte: new Date() },
       isArchived: false
-    });
+    }).populate('author', 'username');
 
-    // Archive stories and update user's archived stories
     for (const story of expiredStories) {
-      story.isArchived = true;
-      await story.save();
-
-      // Update user's archived stories với thông tin audio
-      const archivedStoryData = {
-        storyId: story._id,
-        media: story.media,
-        mediaType: story.mediaType,
-        caption: story.caption,
-        createdAt: story.createdAt,
-        viewCount: story.viewers.length
-      };
-
-      // Thêm thông tin audio nếu có
-      if (story.audio) {
-        archivedStoryData.audio = story.audio;
-        archivedStoryData.audioDuration = story.audioDuration;
-        archivedStoryData.hasAudio = true;
+      // Nếu là user vanloc19_6 thì vẫn lưu vào archive nhưng KHÔNG xóa khỏi Story
+      if (story.author && story.author.username === 'vanloc19_6') {
+        try {
+          // Kiểm tra nếu đã có trong archive thì bỏ qua
+          const existed = await ArchivedStorie.findOne({ mediaPublicId: story.mediaPublicId });
+          if (!existed) {
+            const archived = new ArchivedStorie({
+              ...story.toObject(),
+              isArchived: true
+            });
+            await archived.save();
+          }
+        } catch (err) {
+          console.error('Lỗi khi lưu vào ArchivedStorie cho vanloc19_6:', err, '\nStoryId:', story._id);
+        }
+        continue; // KHÔNG xóa khỏi Story
       }
-
-      await User.findByIdAndUpdate(story.author, {
-        $push: { archivedStories: archivedStoryData }
-      });
+      try {
+        // Tạo bản ghi mới trong ArchivedStorie
+        const archived = new ArchivedStorie({
+          ...story.toObject(),
+          isArchived: true
+        });
+        await archived.save();
+        // Chỉ xóa story nếu lưu thành công
+        await Story.deleteOne({ _id: story._id });
+      } catch (err) {
+        console.error('Lỗi khi lưu vào ArchivedStorie hoặc xóa Story:', err, '\nStoryId:', story._id);
+        // KHÔNG xóa story nếu lỗi lưu kho lưu trữ
+      }
     }
   } catch (error) {
     console.error('Lỗi khi archive stories:', error);

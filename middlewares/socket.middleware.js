@@ -1,7 +1,8 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { handleMessages } from '../server/message.service.js';
 import { handleCall } from '../server/call.service.js';
-import { createCommentForPost, createCommentForReel, emitCommentsListForItem } from '../server/comment.server.js';
+import { createCommentForPost, createCommentForReel, emitCommentsListForItem } from '../server/comment.service.js';
+import { viewStory } from '../server/story.service.js';
 import User from '../models/user.model.js';
 
 let io;
@@ -11,7 +12,7 @@ export const initSocket = (server) => {
   const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:3001',
-    'https://instagram-clone-seven-sable.vercel.app',
+    'https://instagramclone-app.vercel.app',
     process.env.FRONTEND_URL,
   ].filter(Boolean);
 
@@ -121,7 +122,7 @@ export const initSocket = (server) => {
 
         if (parentId) {
           // Nếu có parentId, gọi hàm tạo reply
-          const { createReplyForComment } = await import('../server/comment.server.js');
+          const { createReplyForComment } = await import('../server/comment.service.js');
           savedComment = await createReplyForComment(authorId, parentId, text, itemId, itemType);
         } else if (itemType === 'post') {
           savedComment = await createCommentForPost(authorId, itemId, text);
@@ -131,17 +132,23 @@ export const initSocket = (server) => {
 
         if (savedComment) {
           const roomName = `${itemType}_${itemId}`;
-          // Lấy lại tổng số comment + reply sau khi thêm mới
-          const Comment = (await import('../models/comment.model.js')).default;
-          const commentCount = await Comment.countDocuments({ [itemType]: itemId, parentId: null });
-          const replyCount = await Comment.countDocuments({ [itemType]: itemId, parentId: { $ne: null } });
-          const totalComments = commentCount + replyCount;
+          // Populate author with checkMark and always ensure for vanloc19_6
+          const User = (await import('../models/user.model.js')).default;
+          let author = await User.findById(savedComment.author).lean();
+          const authorObj = author ? {
+            _id: author._id,
+            username: author.username,
+            profilePicture: author.profilePicture,
+            fullname: author.fullname,
+            isVerified: author.isVerified,
+            checkMark: author.checkMark === true // lấy đúng trường checkMark từ user document
+          } : { _id: savedComment.author, checkMark: false };
           io.in(roomName).emit('comment:created', {
             itemId,
             itemType,
             comment: {
               id: savedComment._id,
-              authorId: savedComment.author,
+              author: authorObj,
               text: savedComment.text,
               createdAt: savedComment.createdAt,
               updatedAt: savedComment.updatedAt,
@@ -161,7 +168,7 @@ export const initSocket = (server) => {
     socket.on('post:like', async ({ postId, userId }) => {
       try {
         // Import động controller để tránh circular
-        const { likePost } = await import('../controllers/post.controllers.js');
+        const { likePost } = await import('../controllers/post.controller.js');
         // Tạo req, res giả lập
         const req = { params: { postId }, user: { id: userId } };
         let isLike = false;
@@ -188,15 +195,34 @@ export const initSocket = (server) => {
     });
 
     // Lấy danh sách comment qua socket (realtime)
-    socket.on('comments:get', async ({ itemId, itemType, limit = 10, userId }) => {
+    socket.on('comments:get', async ({ itemId, itemType, limit = 10, userId, skip = 0 }) => {
       try {
-        const { getCommentsListForItem } = await import('../server/comment.server.js');
-        const { comments, metrics } = await getCommentsListForItem(itemId, itemType, limit, userId);
+        const { getCommentsListForItem } = await import('../server/comment.service.js');
+        const { comments, metrics } = await getCommentsListForItem(itemId, itemType, limit, userId, skip);
         const roomName = `${itemType}_${itemId}`;
         // Emit realtime cho tất cả client trong room (không chỉ socket.emit)
-        io.in(roomName).emit('comments:updated', { comments, metrics, itemId, itemType });
+        io.in(roomName).emit('comments:updated', { comments, metrics, itemId, itemType, skip, limit });
       } catch (error) {
         socket.emit('comments:error', { message: 'Không thể lấy danh sách bình luận' });
+      }
+    });
+
+    // XỬ LÝ REALTIME VIEW STORY
+    socket.on('story:view', async ({ storyId, userId }) => {
+      try {
+        if (!storyId || !userId) return;
+        // Join room story_<storyId> để nhận realtime
+        const roomName = `story_${storyId}`;
+        socket.join(roomName);
+        // Cập nhật view
+        const viewers = await viewStory(storyId, userId);
+        // Emit tới tất cả client trong room story
+        io.in(roomName).emit('story:viewed', {
+          storyId,
+          viewers
+        });
+      } catch (error) {
+        socket.emit('story:error', { message: 'Không thể cập nhật view story' });
       }
     });
 

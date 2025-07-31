@@ -2,6 +2,8 @@ import User from '../models/user.model.js';
 import cloudinary from '../config/cloudinary.config.js';
 import { uploadImage } from '../utils/cloudinaryUpload.js';
 import mongoose from 'mongoose';
+import { generateRandomUser, FAKE_USERS } from '../helper/buffAdmin.js';
+import { createNotification } from '../server/notification.service.js';
 
 // Your existing deleteUser function
 export const deleteUser = async (req, res) => {
@@ -73,6 +75,47 @@ export const getUser = async (req, res) => {
         .select('-password')
         .populate('archivedStories', 'media mediaType caption createdAt viewCount')
         .lean();
+    }
+
+    // Nếu không tìm thấy user thật, thử tìm user ảo
+    if (!user) {
+      // Tìm user ảo theo username (không phân biệt hoa thường) trong FAKE_USERS cố định
+      user = FAKE_USERS.find(u =>
+        (u._id === identifier) ||
+        (u.username && u.username.toLowerCase() === identifier.toLowerCase())
+      );
+      if (user) {
+        // Đảm bảo user ảo có đầy đủ thông tin như user thật
+        user = {
+          ...user,
+          id: user._id, // FE NextJS cần
+          username: user.username,
+          fullName: user.fullName,
+          profilePicture: user.profilePicture || 'https://thumbs.dreamstime.com/b/default-avatar-profile-icon-vector-social-media-user-portrait-176256935.jpg',
+          bio: user.bio || 'Đây là tài khoản ảo dùng cho mục đích demo.',
+          followers: user.followers || [],
+          following: user.following || [],
+          posts: user.posts || [],
+          archivedStories: user.archivedStories || [],
+          isOnline: false,
+          isPrivate: false,
+          checkMark: user.isVerified || user.checkMark || false,
+          isFake: true,
+          authType: 'local',
+          lastActive: user.lastActive || new Date(),
+          lastOnline: user.lastOnline || null,
+          createdAt: user.createdAt || new Date(Date.now() - Math.random() * 86400000 * 30),
+          updatedAt: user.updatedAt || new Date(),
+          followersCount: (user.followers ? user.followers.length : 0),
+          followingCount: (user.following ? user.following.length : 0),
+          archivedStoriesCount: (user.archivedStories ? user.archivedStories.length : 0),
+          hasStories: false
+        };
+        return res.status(200).json({
+          success: true,
+          user
+        });
+      }
     }
 
     if (!user) {
@@ -307,6 +350,12 @@ export const toggleFollowUser = async (req, res) => {
       });
       message = `Đã theo dõi ${targetUser.username} thành công.`;
       actionStatus = 'followed';
+      // Tạo notification khi follow (không phải follow chính mình)
+      await createNotification({
+        user: targetUser._id,
+        type: 'follow',
+        fromUser: currentUserId
+      });
     }
 
     return res.status(200).json({

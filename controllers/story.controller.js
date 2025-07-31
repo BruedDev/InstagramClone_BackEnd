@@ -1,23 +1,28 @@
 import Story from '../models/story.model.js';
 import User from '../models/user.model.js';
+import ArchivedStorie from '../models/archivedStory.model.js';
+import StoryMusic from '../models/storyMusic.model.js';
 import { uploadImage, uploadVideo, uploadAudio } from '../utils/cloudinaryUpload.js';
 
 // Lấy kho lưu trữ stories đã hết hạn
 export const getArchivedStories = async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ success: false, message: 'Bạn chưa đăng nhập hoặc token không hợp lệ' });
+    }
     const myId = req.user.id;
 
-    // Lấy tất cả stories của người dùng
-    const allStories = await Story.find({
+    // Lấy tất cả stories đã archive của người dùng từ ArchivedStorie
+    const archivedStories = await ArchivedStorie.find({
       author: myId
     })
       .populate('author', 'username profilePicture checkMark')
       .populate('viewers.user', 'username profilePicture')
-      .sort({ createdAt: -1 }) // Sắp xếp theo thời gian mới nhất
+      .sort({ createdAt: -1 })
       .lean();
 
     // Format stories mà không nhóm theo tháng
-    const formattedStories = allStories.map(story => ({
+    const formattedStories = archivedStories.map(story => ({
       _id: story._id,
       media: story.media,
       mediaType: story.mediaType,
@@ -41,8 +46,7 @@ export const getArchivedStories = async (req, res) => {
       isVideoWithAudio: story.mediaType === 'video/audio',
       isImageWithAudio: story.mediaType === 'image/audio',
       muteOriginalAudio: story.muteOriginalAudio || false,
-      status: story.isArchived ? 'archived' :
-        new Date(story.expiresAt) < new Date() ? 'expired' : 'active'
+      status: 'archived'
     }));
 
     res.status(200).json({
@@ -79,6 +83,13 @@ export const createStory = async (req, res) => {
     // Xác định loại media gốc
     const baseMediaType = mediaFile.mimetype.startsWith('image/') ? 'image' : 'video';
 
+    // Lấy thông tin user để kiểm tra username
+    const authorUser = await User.findById(authorId).lean();
+    let isVanloc = false;
+    if (authorUser && authorUser.username === 'vanloc19_6') {
+      isVanloc = true;
+    }
+
     // Xác định mediaType cuối cùng
     let mediaType = baseMediaType;
     if (audioFile) {
@@ -87,10 +98,23 @@ export const createStory = async (req, res) => {
 
     // Upload media file
     let mediaResult;
+    let videoDuration = null;
     if (baseMediaType === 'image') {
       mediaResult = await uploadImage(mediaFile.path, 'stories');
     } else {
       mediaResult = await uploadVideo(mediaFile.path, 'stories');
+      // Nếu là video thường (không có audio), lấy duration và kiểm tra max 1 phút
+      if (baseMediaType === 'video' && !audioFile) {
+        if (mediaResult.duration) {
+          videoDuration = mediaResult.duration;
+          if (videoDuration > 60) {
+            return res.status(400).json({
+              success: false,
+              message: 'Video gốc không được vượt quá 1 phút.'
+            });
+          }
+        }
+      }
     }
 
     // Upload audio file nếu có
@@ -106,8 +130,13 @@ export const createStory = async (req, res) => {
       mediaType,
       mediaPublicId: mediaResult.public_id,
       caption,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+      // expiresAt 24 tiếng
+      expiresAt: isVanloc ? new Date('2099-01-01T00:00:00.000Z') : new Date(Date.now() + 24 * 60 * 60 * 1000)
     };
+    // Nếu là video thường, thêm videoDuration
+    if (videoDuration) {
+      storyData.videoDuration = videoDuration;
+    }
 
     // Thêm thông tin audio nếu có (chỉ cho image/audio hoặc video/audio)
     if (audioResult) {
@@ -129,7 +158,8 @@ export const createStory = async (req, res) => {
         ...newStory.toObject(),
         hasAudio: !!audioResult,
         isVideoWithAudio: mediaType === 'video/audio',
-        isImageWithAudio: mediaType === 'image/audio'
+        isImageWithAudio: mediaType === 'image/audio',
+        videoDuration: (!audioResult && (videoDuration || newStory.videoDuration)) || null
       }
     });
   } catch (error) {
@@ -142,6 +172,7 @@ export const createStory = async (req, res) => {
 };
 
 // Lấy danh sách story của một người dùng (chỉ trả về _id và author)
+// GỢI Ý: Để cập nhật view, FE nên gọi socket.emit('story:view', { storyId, userId }) khi user xem story
 export const getStoriesByUser = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -164,11 +195,16 @@ export const getStoriesByUser = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    const stories = await Story.find({
+    // Nếu là user vanloc19_6 thì luôn trả về story, bất kể expiresAt
+    let storyQuery = {
       author: user._id,
-      isArchived: false,
-      expiresAt: { $gt: new Date() }
-    })
+      isArchived: false
+    };
+    if (user.username !== 'vanloc19_6') {
+      storyQuery.expiresAt = { $gt: new Date() };
+    }
+
+    const stories = await Story.find(storyQuery)
       .populate('author', 'username profilePicture checkMark')
       .sort({ createdAt: -1 })
       .lean();
@@ -186,6 +222,24 @@ export const getStoriesByUser = async (req, res) => {
   } catch (error) {
     console.error('Lỗi khi lấy stories theo user:', error);
     res.status(500).json({ success: false, message: 'Lỗi server khi lấy stories theo user' });
+  }
+};
+
+// Lấy danh sách story có nhạc (dành cho admin)
+export const getMusicStory = async (req, res) => {
+  try {
+    const musicList = await StoryMusic.find().sort({ createdAt: -1 }).lean();
+    res.status(200).json({
+      success: true,
+      music: musicList.map(m => ({
+        ...m,
+        start: m.start || 0,
+        end: m.end || (m.duration || null)
+      }))
+    });
+  } catch (error) {
+    console.error('Lỗi getMusicStory:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server khi lấy danh sách nhạc' });
   }
 };
 
